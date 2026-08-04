@@ -24,6 +24,10 @@ export function gerarBloco(dashboard: Dashboard): string {
 	linhas.push(`# Gerado pelo plugin Dash Home — edite em Configurações → Dash Home`);
 	linhas.push(`id: ${dashboard.id}`);
 	linhas.push(`colunas: ${dashboard.colunas}`);
+	// A largura do dashboard faltava aqui: o bloco descrevia o layout sem dizer quanto ele ocupa.
+	// Não muda a renderização (que lê do data.json), mas um bloco que não descreve o próprio
+	// dashboard não serve como registro do que foi configurado.
+	linhas.push(`largura: ${dashboard.largura}`);
 	linhas.push(`quadrantes:`);
 
 	if (dashboard.quadrantes.length === 0) {

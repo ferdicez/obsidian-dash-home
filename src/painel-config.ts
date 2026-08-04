@@ -89,14 +89,22 @@ export class PainelConfigDashHome extends PluginSettingTab {
 	}
 
 	/**
-	 * Salvamento adiado, para campos de texto.
+	 * Salvamento adiado, para campos de texto E SLIDERS.
 	 *
 	 * Escrever no vault a cada tecla é errado por dois motivos: gera uma escrita de arquivo por
 	 * caractere, e transforma qualquer falha numa enxurrada de notificações — foi exatamente o que
 	 * aconteceu com o bug de caixa do nome da nota. Meio segundo depois da última tecla é o
 	 * suficiente para parecer instantâneo e escrever uma vez só.
 	 *
-	 * A miniatura, essa sim, atualiza a cada tecla: ela é memória, não disco.
+	 * ── Por que os sliders também usam isto ──────────────────────────────────────────────
+	 *
+	 * Um slider chamava `aplicar()` no `onChange`, e `aplicar()` redesenha o painel inteiro —
+	 * ou seja, DESTRÓI E RECRIA o próprio slider que está sendo arrastado, a cada pixel. O
+	 * arrasto era interrompido no primeiro movimento e o valor parava onde estava: a usuária
+	 * arrastava a largura e "não mudava nada".
+	 *
+	 * A miniatura, essa sim, atualiza a cada movimento: ela é memória, não disco, e é redesenhada
+	 * sozinha sem tocar nos controles.
 	 */
 	private salvarDigitacao(): void {
 		this.atualizarPreview();
@@ -277,7 +285,7 @@ export class PainelConfigDashHome extends PluginSettingTab {
 					.setLimits(1, 6, 1)
 					.setValue(limitarColunas(dashboard.colunas))
 					.setDynamicTooltip()
-					.onChange(async (valor) => {
+					.onChange((valor) => {
 						dashboard.colunas = limitarColunas(valor);
 						// Reduzir as colunas pode deixar larguras maiores que a grade, o que criaria
 						// colunas implícitas e desfaria o layout. Renormalizamos aqui, e não só na
@@ -285,7 +293,8 @@ export class PainelConfigDashHome extends PluginSettingTab {
 						for (const quad of dashboard.quadrantes) {
 							quad.largura = limitarLarguraQuadrante(quad.largura, dashboard.colunas);
 						}
-						await this.aplicar();
+						// Adiado, não `aplicar()`: redesenhar destruiria este slider durante o arrasto.
+						this.salvarDigitacao();
 					}),
 			);
 
@@ -317,9 +326,9 @@ export class PainelConfigDashHome extends PluginSettingTab {
 						.setLimits(400, 1600, 20)
 						.setValue(dashboard.largura as number)
 						.setDynamicTooltip()
-						.onChange(async (valor) => {
+						.onChange((valor) => {
 							dashboard.largura = limitarLargura(valor);
-							await this.aplicar();
+							this.salvarDigitacao();
 						}),
 				);
 		}
@@ -440,12 +449,14 @@ export class PainelConfigDashHome extends PluginSettingTab {
 					.setLimits(0, 40, 5)
 					.setValue(Math.round(efetivo.intensidadeFundo * 100))
 					.setDynamicTooltip()
-					.onChange(async (valor) => {
+					.onChange((valor) => {
 						global.intensidadeFundo = valor / 100;
-						await this.aplicar();
+						this.salvarDigitacao();
 					}),
 			);
 
+		// Toggle pode usar `aplicar()`: é um clique único, não um arrasto — não há controle sendo
+		// manipulado quando o redesenho acontece.
 		new Setting(el).setName("Título na cor do quadrante").addToggle((toggle) =>
 			toggle.setValue(efetivo.tituloColorido).onChange(async (valor) => {
 				global.tituloColorido = valor;
@@ -468,9 +479,9 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				.setLimits(min, max, 1)
 				.setValue(valor)
 				.setDynamicTooltip()
-				.onChange(async (v) => {
+				.onChange((v) => {
 					definir(v);
-					await this.aplicar();
+					this.salvarDigitacao();
 				}),
 		);
 	}
@@ -652,9 +663,9 @@ export class PainelConfigDashHome extends PluginSettingTab {
 					.setLimits(0, 48, 2)
 					.setValue(cfg.espaco ?? 8)
 					.setDynamicTooltip()
-					.onChange(async (valor) => {
+					.onChange((valor) => {
 						cfg.espaco = valor;
-						await this.aplicar();
+						this.salvarDigitacao();
 					}),
 			);
 
@@ -935,9 +946,9 @@ export class PainelConfigDashHome extends PluginSettingTab {
 					.setLimits(0, 40, 5)
 					.setValue(Math.round((estilo.intensidadeFundo ?? efetivo.intensidadeFundo) * 100))
 					.setDynamicTooltip()
-					.onChange(async (valor) => {
+					.onChange((valor) => {
 						estilo.intensidadeFundo = valor / 100;
-						await this.aplicar();
+						this.salvarDigitacao();
 					}),
 			);
 
@@ -983,9 +994,13 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				// na tela, em vez de saltar para o mínimo.
 				.setValue(valor ?? herdado)
 				.setDynamicTooltip()
-				.onChange(async (v) => {
+				.onChange((v) => {
 					definir(v);
-					await this.aplicar();
+					// Sem `aplicar()`: redesenhar destruiria este slider no meio do arrasto. A
+					// descrição ("Herdando do global") e o botão de desfazer só aparecem no próximo
+					// desenho do painel — é um custo aceitável perto de o controle não funcionar.
+					setting.setDesc(`${v}px`);
+					this.salvarDigitacao();
 				}),
 		);
 
