@@ -66,7 +66,7 @@ export default class DashHomePlugin extends Plugin {
 	/** Persiste e regrava a nota do dashboard ativo — o fluxo normal de qualquer edição no painel. */
 	async salvar(): Promise<void> {
 		await salvarDados(this, this.dados);
-		await escreverDashboard(this.app, dashboardAtivo(this.dados));
+		await escreverDashboard(this.app, dashboardAtivo(this.dados), this.dados.estiloGlobal);
 	}
 
 	/** Persiste sem tocar em nota. Para mudanças que não afetam o conteúdo gerado (ex.: trocar o ativo). */
@@ -76,7 +76,7 @@ export default class DashHomePlugin extends Plugin {
 
 	/** Garante que a nota existe e a abre. */
 	async abrirDashboard(dashboard: Dashboard): Promise<void> {
-		const arquivo = await escreverDashboard(this.app, dashboard);
+		const arquivo = await escreverDashboard(this.app, dashboard, this.dados.estiloGlobal);
 		if (!(arquivo instanceof TFile)) return; // escreverDashboard já avisou o que houve
 		await this.app.workspace.getLeaf(false).openFile(arquivo);
 	}
@@ -84,7 +84,7 @@ export default class DashHomePlugin extends Plugin {
 	private async regerarTodos(): Promise<void> {
 		let ok = 0;
 		for (const dashboard of this.dados.dashboards) {
-			if (await escreverDashboard(this.app, dashboard)) ok++;
+			if (await escreverDashboard(this.app, dashboard, this.dados.estiloGlobal)) ok++;
 		}
 		new Notice(`${ok} de ${this.dados.dashboards.length} nota(s) regerada(s).`);
 	}

@@ -1,5 +1,6 @@
 import { Notice, TFile, TFolder, normalizePath, type App } from "obsidian";
 import type { Dashboard } from "./dados";
+import type { EstiloQuadrante } from "./estilo";
 
 /**
  * A ponte entre o data.json e o vault: gera a nota do dashboard e a mantém atualizada.
@@ -18,7 +19,7 @@ const ABRE = "```dash-home";
 const FECHA = "```";
 
 /** O YAML do bloco. Legível de propósito: se a usuária abrir a nota, tem que dar pra entender. */
-export function gerarBloco(dashboard: Dashboard): string {
+export function gerarBloco(dashboard: Dashboard, estiloGlobal?: EstiloQuadrante): string {
 	const linhas: string[] = [];
 	linhas.push(ABRE);
 	linhas.push(`# Gerado pelo plugin Dash Home — edite em Configurações → Dash Home`);
@@ -28,6 +29,16 @@ export function gerarBloco(dashboard: Dashboard): string {
 	// Não muda a renderização (que lê do data.json), mas um bloco que não descreve o próprio
 	// dashboard não serve como registro do que foi configurado.
 	linhas.push(`largura: ${dashboard.largura}`);
+
+	// A aparência global, que vale para todos os quadrantes deste dashboard.
+	const entradasGlobal = Object.entries(estiloGlobal ?? {}).filter(([, v]) => v !== undefined);
+	if (entradasGlobal.length > 0) {
+		linhas.push(`estilo:`);
+		for (const [chave, valor] of entradasGlobal) {
+			linhas.push(`  ${chave}: ${typeof valor === "string" ? aspas(valor) : valor}`);
+		}
+	}
+
 	linhas.push(`quadrantes:`);
 
 	if (dashboard.quadrantes.length === 0) {
@@ -39,6 +50,15 @@ export function gerarBloco(dashboard: Dashboard): string {
 		if (quadrante.icone) linhas.push(`    icone: ${quadrante.icone}`);
 		if (quadrante.cor) linhas.push(`    cor: ${quadrante.cor}`);
 		if (quadrante.largura) linhas.push(`    largura: ${quadrante.largura}`);
+
+		// O estilo próprio do quadrante (o que ele sobrescreve do global). Faltava aqui: o bloco
+		// descrevia o dashboard sem a aparência, então não servia como registro do que foi
+		// configurado. Só sai o que o quadrante realmente define — o herdado não é repetido.
+		for (const [chave, valor] of Object.entries(quadrante.estilo ?? {})) {
+			// `typeof`, não truthiness: 0 (arredondamento nenhum) e false são escolhas válidas.
+			if (valor === undefined) continue;
+			linhas.push(`    ${chave}: ${typeof valor === "string" ? aspas(valor) : valor}`);
+		}
 
 		if (quadrante.conteudo === "separador") {
 			linhas.push(`    conteudo: separador`);
@@ -92,14 +112,18 @@ function aspas(valor: string): string {
  * Escreve o dashboard na sua nota, criando o arquivo (e as pastas do caminho) se preciso.
  * Devolve o arquivo escrito, ou null se falhou — o chamador decide se avisa a usuária.
  */
-export async function escreverDashboard(app: App, dashboard: Dashboard): Promise<TFile | null> {
+export async function escreverDashboard(
+	app: App,
+	dashboard: Dashboard,
+	estiloGlobal?: EstiloQuadrante,
+): Promise<TFile | null> {
 	const bruto = dashboard.caminhoNota?.trim() ?? "";
 	// Um caminho vazio viraria ".md" — um arquivo oculto e sem nome. Melhor não escrever nada e
 	// deixar a usuária apontar a nota pelo seletor.
 	if (!bruto) return null;
 
 	const caminho = normalizePath(bruto.toLowerCase().endsWith(".md") ? bruto : `${bruto}.md`);
-	const bloco = gerarBloco(dashboard);
+	const bloco = gerarBloco(dashboard, estiloGlobal);
 
 	try {
 		const existente = acharArquivo(app, caminho);

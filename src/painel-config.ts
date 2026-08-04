@@ -410,7 +410,13 @@ export class PainelConfigDashHome extends PluginSettingTab {
 		// A herança (global → quadrante) segue a mesma lógica do estilo de callout do Customize.
 		const global = dados.estiloGlobal;
 
-		new Setting(el)
+		// Quantos quadrantes têm posição própria — eles ignoram esta configuração global, e sem
+		// aviso a usuária mexe aqui e "não acontece nada".
+		const comBarraPropria = this.plugin.dados.dashboards.flatMap((d) =>
+			d.quadrantes.filter((q) => q.estilo?.posicaoBarra !== undefined),
+		);
+
+		const barraGlobal = new Setting(el)
 			.setName("Barra colorida")
 			.addDropdown((drop) => {
 				drop.addOption("topo", "No topo");
@@ -425,6 +431,24 @@ export class PainelConfigDashHome extends PluginSettingTab {
 					await this.aplicar();
 				});
 			});
+
+		if (comBarraPropria.length > 0) {
+			barraGlobal.setDesc(
+				`${comBarraPropria.length} quadrante(s) têm barra própria e ignoram esta escolha.`,
+			);
+			barraGlobal.addExtraButton((b) =>
+				b
+					.setIcon("rotate-ccw")
+					.setTooltip("Fazer todos herdarem daqui")
+					.onClick(async () => {
+						for (const quad of comBarraPropria) {
+							if (quad.estilo) delete quad.estilo.posicaoBarra;
+						}
+						new Notice("Todos os quadrantes voltaram a herdar a barra do global.");
+						await this.aplicar();
+					}),
+			);
+		}
 
 		const efetivo = resolverEstilo(global, {});
 
@@ -904,17 +928,27 @@ export class PainelConfigDashHome extends PluginSettingTab {
 		// que é justamente o que a palavra "herdando" nega.
 		const efetivo = resolverEstilo(this.plugin.dados.estiloGlobal, {});
 
+		const nomeBarra: Record<string, string> = {
+			topo: "No topo",
+			esquerda: "À esquerda",
+			direita: "À direita",
+			baixo: "Embaixo",
+			volta: "Em volta (borda inteira)",
+			nenhuma: "Sem barra",
+		};
+
 		new Setting(el)
 			.setName("Barra colorida")
-			.setDesc("Onde a cor aparece no card.")
+			.setDesc(
+				estilo.posicaoBarra === undefined
+					? `Herdando do global (${nomeBarra[efetivo.posicaoBarra] ?? efetivo.posicaoBarra}).`
+					: "Este quadrante tem barra própria e ignora a configuração global.",
+			)
 			.addDropdown((drop) => {
-				drop.addOption("", "Herdar do global");
-				drop.addOption("topo", "No topo");
-				drop.addOption("esquerda", "À esquerda");
-				drop.addOption("direita", "À direita");
-				drop.addOption("baixo", "Embaixo");
-				drop.addOption("volta", "Em volta (borda inteira)");
-				drop.addOption("nenhuma", "Sem barra");
+				drop.addOption("", `Herdar do global (${nomeBarra[efetivo.posicaoBarra] ?? ""})`);
+				for (const [chave, rotulo] of Object.entries(nomeBarra)) {
+					drop.addOption(chave, rotulo);
+				}
 				drop.setValue(estilo.posicaoBarra ?? "");
 				drop.onChange(async (valor) => {
 					estilo.posicaoBarra = (valor || undefined) as PosicaoBarra | undefined;
