@@ -1,0 +1,524 @@
+/* Dash Home — dashboard inicial de navegação.
+   Tudo aqui usa variáveis do tema do Obsidian (--color-*, --background-*, --text-*) para o
+   dashboard acompanhar o tema claro/escuro da usuária sem um segundo conjunto de regras. */
+
+/* ── O dashboard renderizado ─────────────────────────────────────────────────────────── */
+
+.dash-home-dashboard {
+	--dash-home-cor: var(--interactive-accent);
+	margin: 0.5em 0;
+	/* Declarado no próprio dashboard (não num ancestral do Obsidian) para a media query abaixo
+	   medir a largura real disponível — vale igual na nota, no embed e na barra lateral. */
+	container-type: inline-size;
+}
+
+.dash-home-grid {
+	display: grid;
+	grid-template-columns: repeat(var(--dash-home-colunas, 3), minmax(0, 1fr));
+	gap: 1em;
+}
+
+/* Largura intermediária: em vez de manter a grade fixa, as colunas passam a ter uma largura
+   mínima e o grid decide quantas cabem. Assim um dashboard de 6 colunas degrada suavemente
+   (6 → 4 → 2) em vez de saltar direto para 1.
+
+   `auto-fit` com `minmax` em vez de dividir --dash-home-colunas por 2: `repeat()` não aceita
+   contagem fracionária de forma confiável, e o resultado dependeria do valor ser par. */
+@container (max-width: 1100px) {
+	.dash-home-grid {
+		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	}
+}
+
+/* Tela estreita (painel lateral, celular): o grid vira uma coluna só. Mede o container, não a
+   janela, então vale também com o dashboard numa barra lateral estreita de tela grande. */
+@container (max-width: 700px) {
+	.dash-home-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	/* Com uma coluna só, o `grid-column: span N` do style inline sobraria e criaria colunas
+	   implícitas — o layout se desfaz justamente na tela onde há menos espaço. `!important` é
+	   necessário: a regra do span vem de style inline, que nenhum seletor vence sem ele. */
+	.dash-home-grid > .dash-home-quadrante {
+		grid-column: 1 / -1 !important;
+	}
+}
+
+/* A miniatura do painel é estreita por natureza, mas deve mostrar o layout de tela larga —
+   senão o preview mentiria, exibindo uma coluna quando o dashboard real tem três. */
+.dash-home-dashboard.is-miniatura {
+	container-type: normal;
+}
+
+/* ── Largura ─────────────────────────────────────────────────────────────────────────────
+   A largura de leitura do Obsidian é imposta por um container acima do dashboard, então não
+   dá para simplesmente pedir mais largura: o bloco cresce para os dois lados com margem
+   negativa simétrica. `--dash-home-largura` limita o quanto ele cresce (sem ela, vai ao
+   máximo disponível). O max-width nunca passa da largura da viewport do container. */
+.dash-home-dashboard.is-largura-total {
+	width: var(--dash-home-largura, 100cqw);
+	max-width: 100cqw;
+	margin-left: 50%;
+	transform: translateX(-50%);
+}
+
+/* Sem container-query disponível (editor em modo fonte, por exemplo), cai numa aproximação
+   que ainda alarga o bloco sem estourar a janela. */
+@supports not (width: 100cqw) {
+	.dash-home-dashboard.is-largura-total {
+		width: var(--dash-home-largura, 100%);
+		max-width: 100%;
+		margin-left: 0;
+		transform: none;
+	}
+}
+
+.dash-home-quadrante {
+	background: var(--dash-home-fundo, var(--background-secondary));
+	/* border e border-radius vêm do style inline (ver estilo.ts) — aqui só os padrões, para o
+	   card continuar apresentável se nenhum estilo tiver sido aplicado. */
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--dash-home-radius, var(--radius-m));
+	padding: var(--dash-home-padding, 14px);
+	min-width: 0;
+}
+
+.dash-home-quadrante-titulo {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	font-weight: var(--font-semibold);
+	font-size: var(--font-ui-medium);
+	color: var(--text-normal);
+	margin-bottom: 0.7em;
+}
+
+/* Título na cor do quadrante — opcional, porque em cor clara sobre fundo claro ele perde
+   contraste, e a legibilidade do título é mais importante que a coordenação de cor. */
+.dash-home-quadrante-titulo.is-colorido {
+	color: var(--dash-home-cor);
+}
+
+.dash-home-quadrante-icone {
+	display: flex;
+	color: var(--dash-home-cor);
+}
+
+.dash-home-quadrante-icone svg {
+	width: var(--dash-home-icone, 16px);
+	height: var(--dash-home-icone, 16px);
+}
+
+/* Com fundo colorido, o botão precisa de um fundo que ainda o destaque do card. */
+.dash-home-quadrante.is-fundo-colorido .dash-home-botao {
+	background: var(--background-primary);
+}
+
+.dash-home-botoes {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35em;
+}
+
+.dash-home-botao {
+	display: flex;
+	align-items: center;
+	gap: 0.6em;
+	padding: 0.5em 0.7em;
+	border-radius: var(--radius-s);
+	background: var(--background-primary);
+	border: 1px solid transparent;
+	color: var(--text-normal);
+	text-decoration: none;
+	cursor: pointer;
+	transition: background 120ms ease, border-color 120ms ease;
+}
+
+.dash-home-botao:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--dash-home-cor);
+	text-decoration: none;
+}
+
+.dash-home-botao-icone {
+	display: flex;
+	color: var(--dash-home-cor);
+	flex-shrink: 0;
+}
+
+.dash-home-botao-icone svg {
+	width: 1em;
+	height: 1em;
+}
+
+.dash-home-botao-texto {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Tamanhos dos botões */
+.dash-home-botoes-pequeno .dash-home-botao {
+	padding: 0.3em 0.55em;
+	font-size: var(--font-ui-smaller);
+}
+
+.dash-home-botoes-grande .dash-home-botao {
+	padding: 0.75em 0.9em;
+	font-size: var(--font-ui-medium);
+}
+
+.dash-home-vazio,
+.dash-home-botao-vazio {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	font-style: italic;
+	padding: 0.3em 0;
+}
+
+/* ── A miniatura do painel de configurações ──────────────────────────────────────────── */
+
+.dash-home-dashboard.is-miniatura {
+	font-size: 0.75em;
+	pointer-events: none;
+}
+
+.dash-home-dashboard.is-miniatura .dash-home-grid {
+	gap: 0.6em;
+}
+
+.dash-home-dashboard.is-miniatura .dash-home-quadrante {
+	padding: 0.6em 0.7em 0.7em;
+}
+
+.dash-home-botao.is-inerte {
+	cursor: default;
+}
+
+/* ── O painel de configurações ───────────────────────────────────────────────────────── */
+
+.dash-home-config-colunas {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
+	gap: 1.5em;
+	align-items: start;
+	margin-top: 1em;
+}
+
+/* Configurações abertas em janela estreita: a miniatura desce para baixo da montagem. */
+@media (max-width: 900px) {
+	.dash-home-config-colunas {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}
+
+.dash-home-config-preview {
+	position: sticky;
+	top: 0;
+}
+
+.dash-home-config-preview-nota {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	margin-bottom: 0.6em;
+}
+
+.dash-home-config-preview-palco {
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	padding: 0.8em;
+	overflow: hidden;
+}
+
+.dash-home-config h3 {
+	margin: 1.2em 0 0.4em;
+	font-size: var(--font-ui-medium);
+	color: var(--text-normal);
+}
+
+.dash-home-config h4 {
+	margin: 1em 0 0.3em;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.dash-home-config-vazio {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	font-style: italic;
+	padding: 0.5em 0;
+}
+
+.dash-home-config-acao.is-desativado {
+	opacity: 0.35;
+	cursor: default;
+}
+
+/* Um botão dentro do quadrante: duas linhas (nome+ícone / destino) */
+.dash-home-config-botao {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	padding: 0 0.6em;
+	margin-bottom: 0.4em;
+	background: var(--background-primary);
+}
+
+.dash-home-config-botao .setting-item {
+	border: none;
+	padding: 0.4em 0;
+}
+
+.dash-home-config-botao-topo .setting-item-info,
+.dash-home-config-botao-destino .setting-item-info {
+	display: none;
+}
+
+.dash-home-config-botao-topo .setting-item-control,
+.dash-home-config-botao-destino .setting-item-control {
+	justify-content: flex-start;
+	flex-wrap: nowrap;
+}
+
+.dash-home-config-botao-topo input[type="text"] {
+	flex: 1;
+	min-width: 0;
+}
+
+/* O botão de destino mostra o caminho escolhido — pode ser longo, então trunca em vez de esticar. */
+.dash-home-config-botao-destino .setting-item-control > button {
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* ── Acordeão ─────────────────────────────────────────────────────────────────────────────
+   Portado do painel do My Tasks, a pedido da usuária. Sem moldura: só a linha divisória
+   embaixo e o recuo do corpo dão a leitura de hierarquia. */
+
+.dash-home-oculto {
+	display: none !important;
+}
+
+.dash-home-acordeao {
+	display: block;
+	width: 100%;
+	margin: 0;
+	padding: 0;
+	background: transparent;
+	border: none;
+	border-bottom: 1px solid var(--background-modifier-border);
+	text-align: left;
+}
+
+/* O cabeçalho é <button> (foco por teclado), então precisa perder toda a aparência de botão.
+   O !important é necessário: o app estiliza `button` dentro da aba de Configurações com regras
+   mais específicas que estas — sem forçar, o texto sai centralizado e o bloco ganha margem
+   automática. */
+.dash-home-acordeao-cabecalho {
+	display: flex !important;
+	align-items: flex-start !important;
+	justify-content: flex-start !important;
+	gap: 8px;
+	width: 100% !important;
+	max-width: none !important;
+	margin: 0 !important;
+	padding: 12px 4px !important;
+	background: transparent !important;
+	border: none !important;
+	box-shadow: none !important;
+	border-radius: 0 !important;
+	cursor: pointer;
+	text-align: left !important;
+	font-size: var(--font-ui-small);
+	line-height: 1.4;
+	color: var(--text-normal);
+	white-space: normal;
+	height: auto !important;
+}
+
+.dash-home-acordeao-cabecalho:hover {
+	background: var(--background-modifier-hover) !important;
+}
+
+/* Os textos são filhos do <button>, e o alinhamento centralizado dele vazaria para eles. */
+.dash-home-acordeao-textos,
+.dash-home-acordeao-titulo,
+.dash-home-acordeao-descricao {
+	text-align: left !important;
+}
+
+.dash-home-acordeao-seta {
+	display: inline-flex;
+	align-items: center;
+	flex-shrink: 0;
+	/* Alinha a seta com a primeira linha do título, não com o bloco (que pode ter descrição). */
+	margin-top: 2px;
+	color: var(--text-muted);
+	transition: transform 0.12s ease;
+}
+
+.dash-home-acordeao-aberto > .dash-home-acordeao-cabecalho .dash-home-acordeao-seta {
+	transform: rotate(90deg);
+}
+
+.dash-home-acordeao-seta svg {
+	width: 14px;
+	height: 14px;
+}
+
+.dash-home-acordeao-textos {
+	min-width: 0;
+	flex: 1;
+}
+
+.dash-home-acordeao-titulo {
+	font-weight: 600;
+}
+
+.dash-home-acordeao-descricao {
+	margin-top: 2px;
+	font-size: 0.85em;
+	color: var(--text-muted);
+	white-space: normal;
+}
+
+.dash-home-acordeao-resumo {
+	flex-shrink: 0;
+	margin-top: 2px;
+	font-size: 0.85em;
+	color: var(--text-faint);
+}
+
+/* Ações no cabeçalho (subir/descer/excluir). O acordeão ignora cliques aqui dentro. */
+.dash-home-acordeao-acoes {
+	display: flex;
+	gap: 2px;
+	flex-shrink: 0;
+	margin-left: 4px;
+}
+
+/* O recuo à esquerda é o que dá a leitura de "dentro de": o conteúdo alinha com o título,
+   depois da seta. */
+.dash-home-acordeao-corpo {
+	padding: 8px 4px 12px 22px;
+}
+
+/* Nível aninhado: título menor, e o último não repete a linha de baixo — senão dois traços
+   se empilham quando o acordeão de dentro fecha o de fora. */
+.dash-home-acordeao-aninhado > .dash-home-acordeao-cabecalho .dash-home-acordeao-titulo {
+	font-size: 0.95em;
+}
+
+.dash-home-acordeao-corpo > .dash-home-acordeao:last-child {
+	border-bottom: none;
+}
+
+/* Dentro de um acordeão, a primeira linha de configuração não precisa da borda de topo do
+   Obsidian — o padding do topo já vem do corpo. */
+.dash-home-acordeao-corpo > .setting-item:first-child {
+	border-top: none;
+	padding-top: 0;
+}
+
+/* Editor do quadrante de conteúdo livre */
+.dash-home-config-markdown {
+	width: 100%;
+	min-height: 8em;
+	resize: vertical;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.5;
+	margin: 0.3em 0;
+}
+
+/* Conteúdo livre renderizado no dashboard */
+.dash-home-markdown > :first-child {
+	margin-top: 0;
+}
+
+.dash-home-markdown > :last-child {
+	margin-bottom: 0;
+}
+
+/* Uma Base ou tabela embutida pode ser mais larga que o quadrante; rola dentro dele em vez de
+   estourar o grid e empurrar as outras colunas. */
+.dash-home-markdown {
+	overflow-x: auto;
+}
+
+.dash-home-markdown-previa {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.4;
+}
+
+/* Swatches de cor do quadrante */
+.dash-home-config-cores .setting-item-control {
+	flex-wrap: wrap;
+	justify-content: flex-start;
+	gap: 0.4em;
+}
+
+.dash-home-swatches {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.3em;
+}
+
+/* `.dash-home-swatch.dash-home-swatch` (0,2,0), não a classe simples (0,1,0).
+   O Obsidian estiliza os botões do painel com `.setting-item-control button`, que é 0,2,0 e
+   aplica `background: var(--interactive-normal)` — cinza. Contra 0,1,0 o Obsidian vencia SEMPRE,
+   independente da ordem no <head>, e todos os swatches saíam cinza (só o selecionado parecia
+   colorido, porque o anel do `is-ativo` vem de box-shadow e não de background).
+
+   Repetir a MESMA classe soma especificidade de verdade sem mudar o que casa — mesmo truque do
+   `.callout.callout` em `customize/src/callouts.ts`. (`:is(.a, .a)` NÃO serve: `:is()` assume a
+   especificidade do argumento mais específico, e aqui os dois são iguais.) */
+.dash-home-swatch.dash-home-swatch {
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border-radius: 50%;
+	background-color: var(--swatch);
+	/* `background-image: none` porque temas podem pintar o botão com gradiente, que ficaria por
+	   cima da cor sólida e devolveria o cinza. */
+	background-image: none;
+	border: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	box-shadow: none;
+	/* Sem isto o botão encolhe quando a fileira fica apertada e os círculos viram elipses. */
+	flex: 0 0 auto;
+}
+
+.dash-home-swatch.dash-home-swatch:hover {
+	transform: scale(1.12);
+	background-color: var(--swatch);
+}
+
+/* O anel usa box-shadow, não border: mudar a borda alteraria o tamanho do círculo e faria a
+   fileira "pular" a cada seleção. Precisa de 0,3,0 para vencer o `box-shadow: none` da regra
+   base, que subiu para 0,2,0 acima. */
+.dash-home-swatch.dash-home-swatch.is-ativo {
+	box-shadow: 0 0 0 2px var(--background-primary), 0 0 0 4px var(--interactive-accent);
+}
+
+.dash-home-config-paleta-nome {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+/* Sugestões dos modais */
+.dash-home-sugestao-icone {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.8em;
+}
+
+.dash-home-sugestao-secundaria {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}

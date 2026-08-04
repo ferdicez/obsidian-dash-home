@@ -1,0 +1,10 @@
+{
+	"id": "dash-home",
+	"name": "Dash Home",
+	"version": "0.1.0",
+	"minAppVersion": "1.4.10",
+	"description": "Dashboard inicial de navegação: quadrantes em colunas com botões que abrem notas, pastas, buscas e comandos.",
+	"author": "ferdicez",
+	"authorUrl": "",
+	"isDesktopOnly": false
+}
