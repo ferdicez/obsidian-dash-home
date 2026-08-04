@@ -1,6 +1,6 @@
 {
 	"name": "dash-home",
-	"version": "0.1.6",
+	"version": "0.2.0",
 	"description": "Plugin Obsidian: dashboard inicial de navegação com quadrantes e botões",
 	"main": "main.js",
 	"scripts": {

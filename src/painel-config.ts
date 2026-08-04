@@ -19,6 +19,17 @@ import {
 	type TipoAcao,
 } from "./dados";
 import { resolverEstilo, type EstiloQuadrante, type PosicaoBarra } from "./estilo";
+import {
+	FAIXAS,
+	quemDefine,
+	resolverEstiloBotao,
+	type AlinhamentoBotao,
+	type ArranjoBotoes,
+	type Camada,
+	type EstiloBotao,
+	type FormaBotao,
+	type PinturaBotao,
+} from "./estilo-botao";
 import { paletasDoCustomize, type PaletaExterna } from "./paleta";
 import type DashHomePlugin from "./main";
 import { renderizarDashboard } from "./render";
@@ -487,6 +498,17 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				await this.aplicar();
 			}),
 		);
+
+		// A aparência dos botões, base da herança: vale para todos, salvo o que cada quadrante — e
+		// depois cada botão — sobrescrever.
+		el.createEl("h4", { cls: "dash-home-config-subtitulo", text: "Botões" });
+		this.desenharEstiloBotao(el, {
+			alvo: (dados.estiloBotaoGlobal ??= {}),
+			camada: "global",
+			global: dados.estiloBotaoGlobal,
+			doQuadrante: undefined,
+			doBotao: undefined,
+		});
 	}
 
 	/** Slider do estilo global. Sempre tem valor (cai no padrão de fábrica), então não tem "herdar". */
@@ -646,6 +668,43 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				this.desenharSeletorDeCor(corpoAparencia, quadrante);
 				this.desenharEstilo(corpoAparencia, quadrante);
 			});
+
+			// A aparência dos botões deste quadrante. Em acordeão próprio, e não dentro de "Cor e
+			// aparência", porque somados seriam ~18 controles numa seção só — a mesma razão que
+			// levou os três acordeões aninhados a existirem (sessão 4).
+			// Só para quadrante de botões: num de markdown ou separador não há botão para estilizar.
+			if (!ehMarkdown && quadrante.conteudo !== "separador") {
+				const secaoBotoes = criarAcordeao(corpo, {
+					chave: `${quadrante.id}:aparencia-botoes`,
+					titulo: "Aparência dos botões",
+					aninhado: true,
+				});
+
+				secaoBotoes.sePreenchido((corpoBotoes) => {
+					corpoBotoes.createDiv({
+						cls: "dash-home-config-nota",
+						text: "Vale para os botões deste quadrante; cada botão ainda pode ter o seu.",
+					});
+
+					this.desenharEstiloBotao(corpoBotoes, {
+						alvo: (quadrante.estiloBotao ??= {}),
+						camada: "quadrante",
+						global: this.plugin.dados.estiloBotaoGlobal,
+						doQuadrante: quadrante.estiloBotao,
+						doBotao: undefined,
+					});
+
+					new Setting(corpoBotoes).addButton((b) =>
+						b
+							.setButtonText("Voltar ao estilo global")
+							.setTooltip("Descarta os ajustes de botão deste quadrante")
+							.onClick(async () => {
+								quadrante.estiloBotao = {};
+								await this.aplicar();
+							}),
+					);
+				});
+			}
 		});
 	}
 
@@ -867,32 +926,72 @@ export class PainelConfigDashHome extends PluginSettingTab {
 	 * instalado — ver `paleta.ts`.
 	 */
 	private desenharSeletorDeCor(el: HTMLElement, quadrante: Quadrante): void {
-		const setting = new Setting(el).setName("Cor").setClass("dash-home-config-cores");
+		this.seletorDeCor(el, {
+			nome: "Cor",
+			rotuloPadrao: "Padrão do tema",
+			valor: quadrante.cor,
+			definir: (v) => {
+				quadrante.cor = v;
+			},
+		});
+	}
+
+	/** A cor SÓ deste botão. Sem ela, o botão usa a cor do quadrante — como sempre foi. */
+	private desenharCorDoBotao(el: HTMLElement, botao: Botao): void {
+		const estilo = (botao.estilo ??= {});
+		this.seletorDeCor(el, {
+			nome: "Cor do botão",
+			rotuloPadrao: "Herdar a cor do quadrante",
+			valor: estilo.cor,
+			definir: (v) => {
+				estilo.cor = v;
+			},
+		});
+	}
+
+	/**
+	 * O seletor de cor: swatches do tema, paletas do Customize e um picker livre.
+	 *
+	 * Genérico sobre onde a cor mora (quadrante ou botão) porque as duas telas oferecem exatamente
+	 * as mesmas cores — e a usuária espera escolher a cor de um botão do mesmo jeito que escolhe a
+	 * de um quadrante.
+	 */
+	private seletorDeCor(
+		el: HTMLElement,
+		opcoes: {
+			nome: string;
+			/** O que o swatch "sem cor" significa nesta tela — no botão é "herdar do quadrante". */
+			rotuloPadrao: string;
+			valor: string | undefined;
+			definir: (v: string | undefined) => void;
+		},
+	): void {
+		const setting = new Setting(el).setName(opcoes.nome).setClass("dash-home-config-cores");
 
 		const faixa = setting.controlEl.createDiv({ cls: "dash-home-swatches" });
 
-		const swatch = (valor: string | undefined, rotulo: string, css: string) => {
-			const b = faixa.createEl("button", { cls: "dash-home-swatch" });
+		const swatch = (faixaEl: HTMLElement, valor: string | undefined, rotulo: string, css: string) => {
+			const b = faixaEl.createEl("button", { cls: "dash-home-swatch" });
 			b.setAttribute("aria-label", rotulo);
 			b.setAttribute("title", rotulo);
 			b.style.setProperty("--swatch", css);
-			b.toggleClass("is-ativo", (quadrante.cor ?? "") === (valor ?? ""));
+			b.toggleClass("is-ativo", (opcoes.valor ?? "").toLowerCase() === (valor ?? "").toLowerCase());
 			b.addEventListener("click", async () => {
-				quadrante.cor = valor;
+				opcoes.definir(valor);
 				await this.aplicar();
 			});
 		};
 
-		swatch(undefined, "Padrão do tema", "var(--interactive-accent)");
+		swatch(faixa, undefined, opcoes.rotuloPadrao, "var(--interactive-accent)");
 		for (const nome of Object.keys(CORES)) {
-			swatch(nome, nome.charAt(0).toUpperCase() + nome.slice(1), CORES[nome]);
+			swatch(faixa, nome, nome.charAt(0).toUpperCase() + nome.slice(1), CORES[nome]);
 		}
 
 		// Cor livre: o input nativo é o caminho mais direto e já traz o seletor do sistema.
 		setting.addColorPicker((picker) => {
-			picker.setValue(ehHex(quadrante.cor) ? (quadrante.cor as string) : "#4263eb");
+			picker.setValue(ehHex(opcoes.valor) ? (opcoes.valor as string) : "#4263eb");
 			picker.onChange(async (valor) => {
-				quadrante.cor = valor;
+				opcoes.definir(valor);
 				// Sem redesenhar durante o arrasto do seletor: fecharia o próprio picker.
 				this.salvarDigitacao();
 			});
@@ -904,15 +1003,7 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			linha.nameEl.addClass("dash-home-config-paleta-nome");
 			const faixaPaleta = linha.controlEl.createDiv({ cls: "dash-home-swatches" });
 			for (const hex of paleta.cores) {
-				const b = faixaPaleta.createEl("button", { cls: "dash-home-swatch" });
-				b.setAttribute("aria-label", hex);
-				b.setAttribute("title", hex);
-				b.style.setProperty("--swatch", hex);
-				b.toggleClass("is-ativo", (quadrante.cor ?? "").toLowerCase() === hex);
-				b.addEventListener("click", async () => {
-					quadrante.cor = hex;
-					await this.aplicar();
-				});
+				swatch(faixaPaleta, hex, hex, hex);
 			}
 		}
 	}
@@ -1051,6 +1142,262 @@ export class PainelConfigDashHome extends PluginSettingTab {
 		}
 	}
 
+	/**
+	 * Os controles de aparência dos botões, usados nas TRÊS camadas da herança: global (Aparência),
+	 * quadrante (Cor e aparência) e botão individual.
+	 *
+	 * Um método só para as três porque os controles são os mesmos — o que muda é de onde o valor
+	 * vem e para onde ele vai. Duplicar isto em três lugares faria um controle novo nascer faltando
+	 * em dois deles.
+	 *
+	 * ⚠️ A lição da sessão 11 está em `alvo` + `quemDefine`: cada controle diz de qual camada o
+	 * valor efetivo está vindo, e oferece o botão de voltar ao herdado quando esta camada é quem
+	 * está mandando. Sem isso a usuária mexe no global, uma camada acima ignora, e parece bug.
+	 */
+	private desenharEstiloBotao(el: HTMLElement, ctx: ContextoEstiloBotao): void {
+		const { alvo, camada } = ctx;
+		// O valor que vale quando ESTA camada não define nada — o que os controles mostram como
+		// "herdado". Resolver incluindo a própria camada mostraria o valor próprio, que é
+		// justamente o que a palavra "herdando" nega.
+		const herdado = resolverEstiloBotao(
+			camada === "global" ? undefined : ctx.global,
+			camada === "quadrante" ? undefined : ctx.doQuadrante,
+			undefined,
+		);
+
+		/** De onde vem o valor efetivo deste campo, considerando todas as camadas. */
+		const origem = (campo: keyof EstiloBotao): Camada =>
+			quemDefine(campo, ctx.global, ctx.doQuadrante, ctx.doBotao);
+
+		/**
+		 * A descrição de um controle: diz quando o valor é herdado, e — o caso que importa —
+		 * quando uma camada ACIMA desta está sobrescrevendo, tornando este controle inócuo.
+		 */
+		const descrever = (campo: keyof EstiloBotao, rotuloHerdado: string): string => {
+			const quem = origem(campo);
+			if (alvo[campo] !== undefined) return "Definido aqui.";
+			if (quem === "padrao" || quem === camada) return `Herdando: ${rotuloHerdado}.`;
+			return `Herdando: ${rotuloHerdado}. ${AVISO_SOBRESCRITA[quem] ?? ""}`.trim();
+		};
+
+		// ── Arranjo: só nas camadas que mandam numa LISTA de botões ──────────────────────────
+		// Quantos botões cabem por linha é propriedade do conjunto: um botão sozinho não decide o
+		// arranjo da lista em que está. Por isso o controle não aparece na camada do botão.
+		if (camada !== "botao") {
+			const arranjoHerdado = ctx.doQuadrante?.arranjo ?? ctx.global?.arranjo ?? "coluna";
+			this.escolha<ArranjoBotoes>(el, {
+				nome: "Disposição",
+				descricao:
+					alvo.arranjo !== undefined
+						? "Definido aqui."
+						: `Herdando: ${NOME_ARRANJO[arranjoHerdado]}.`,
+				opcoes: NOME_ARRANJO,
+				herdavel: camada !== "global",
+				rotuloHerdar: `Herdar (${NOME_ARRANJO[arranjoHerdado]})`,
+				valor: alvo.arranjo,
+				definir: (v) => {
+					alvo.arranjo = v;
+				},
+			});
+		}
+
+		this.escolha<FormaBotao>(el, {
+			nome: "Formato",
+			descricao: descrever("forma", NOME_FORMA[herdado.forma]),
+			opcoes: NOME_FORMA,
+			herdavel: camada !== "global",
+			rotuloHerdar: `Herdar (${NOME_FORMA[herdado.forma]})`,
+			valor: alvo.forma,
+			definir: (v) => {
+				alvo.forma = v;
+			},
+		});
+
+		this.escolha<PinturaBotao>(el, {
+			nome: "Cor do botão",
+			descricao: descrever("pintura", NOME_PINTURA[herdado.pintura]),
+			opcoes: NOME_PINTURA,
+			herdavel: camada !== "global",
+			rotuloHerdar: `Herdar (${NOME_PINTURA[herdado.pintura]})`,
+			valor: alvo.pintura,
+			definir: (v) => {
+				alvo.pintura = v;
+			},
+		});
+
+		this.escolha<AlinhamentoBotao>(el, {
+			nome: "Alinhamento",
+			descricao: descrever("alinhamento", NOME_ALINHAMENTO[herdado.alinhamento]),
+			opcoes: NOME_ALINHAMENTO,
+			herdavel: camada !== "global",
+			rotuloHerdar: `Herdar (${NOME_ALINHAMENTO[herdado.alinhamento]})`,
+			valor: alvo.alinhamento,
+			definir: (v) => {
+				alvo.alinhamento = v;
+			},
+		});
+
+		// O arredondamento não faz efeito em pílula (raio máximo por definição): mostrar o slider
+		// ali seria oferecer um controle que não faz nada.
+		if (herdado.forma !== "pilula" || alvo.forma !== undefined) {
+			const forma = alvo.forma ?? herdado.forma;
+			if (forma !== "pilula") {
+				this.sliderCamada(el, ctx, "radius", "Arredondamento", herdado.radius);
+			}
+		}
+
+		this.sliderCamada(el, ctx, "altura", "Altura do botão", herdado.altura);
+		this.sliderCamada(el, ctx, "tamanhoIcone", "Tamanho do ícone", herdado.tamanhoIcone);
+		this.sliderTamanhoFonte(el, ctx, herdado.tamanhoFonte);
+
+		this.alternar(el, {
+			nome: "Só o ícone",
+			descricao: descrever("soIcone", herdado.soIcone ? "sim" : "não"),
+			valor: alvo.soIcone ?? herdado.soIcone,
+			definido: alvo.soIcone !== undefined,
+			definir: (v) => {
+				alvo.soIcone = v;
+			},
+			herdavel: camada !== "global",
+		});
+
+		this.alternar(el, {
+			nome: "Destaque",
+			descricao: descrever("destaque", herdado.destaque ? "sim" : "não"),
+			valor: alvo.destaque ?? herdado.destaque,
+			definido: alvo.destaque !== undefined,
+			definir: (v) => {
+				alvo.destaque = v;
+			},
+			herdavel: camada !== "global",
+		});
+	}
+
+	/**
+	 * O tamanho da letra. Tem método próprio porque é o único slider cujo valor herdado pode não
+	 * existir: sem escolha em nenhuma camada, a letra vem do dropdown "Tamanho dos botões"
+	 * (pequeno/médio/grande), que é CSS e não tem px para mostrar aqui.
+	 *
+	 * Nesse caso o slider começa em 14 (o tamanho de interface do Obsidian) só como ponto de
+	 * partida do arrasto — e o botão de desfazer devolve ao "automático".
+	 */
+	private sliderTamanhoFonte(el: HTMLElement, ctx: ContextoEstiloBotao, herdado: number | undefined): void {
+		const faixa = FAIXAS.tamanhoFonte;
+		const proprio = ctx.alvo.tamanhoFonte;
+		const rotuloHerdado = herdado === undefined ? "o tamanho dos botões" : `${herdado}px`;
+
+		const setting = new Setting(el)
+			.setName("Tamanho da letra")
+			.setDesc(proprio === undefined ? `Automático: segue ${rotuloHerdado}.` : `${proprio}px`);
+
+		setting.addSlider((slider) =>
+			slider
+				.setLimits(faixa.min, faixa.max, 1)
+				.setValue(proprio ?? herdado ?? 14)
+				.setDynamicTooltip()
+				.onChange((v) => {
+					ctx.alvo.tamanhoFonte = v;
+					// Sem `aplicar()`: redesenhar destruiria este slider no meio do arrasto (a
+					// armadilha 1 do doc — já mordeu três vezes neste plugin).
+					setting.setDesc(`${v}px`);
+					this.salvarDigitacao();
+				}),
+		);
+
+		if (proprio !== undefined) {
+			setting.addExtraButton((b) =>
+				b
+					.setIcon("rotate-ccw")
+					.setTooltip("Voltar ao automático")
+					.onClick(async () => {
+						ctx.alvo.tamanhoFonte = undefined;
+						await this.aplicar();
+					}),
+			);
+		}
+	}
+
+	/** Um slider de estilo de botão que respeita a herança da camada. */
+	private sliderCamada(
+		el: HTMLElement,
+		ctx: ContextoEstiloBotao,
+		campo: "radius" | "altura" | "tamanhoIcone",
+		nome: string,
+		herdado: number,
+	): void {
+		const faixa = FAIXAS[campo];
+		this.controleNumero(el, nome, herdado, faixa.min, faixa.max, ctx.alvo[campo], (v) => {
+			ctx.alvo[campo] = v;
+		});
+	}
+
+	/**
+	 * Um dropdown de estilo. A opção "" significa herdar — por isso o valor vazio vira `undefined`
+	 * no modelo, e não uma string vazia (que seria um valor próprio inválido).
+	 */
+	private escolha<T extends string>(
+		el: HTMLElement,
+		opcoes: {
+			nome: string;
+			descricao: string;
+			opcoes: Record<string, string>;
+			herdavel: boolean;
+			rotuloHerdar: string;
+			valor: T | undefined;
+			definir: (v: T | undefined) => void;
+		},
+	): void {
+		new Setting(el)
+			.setName(opcoes.nome)
+			.setDesc(opcoes.descricao)
+			.addDropdown((drop) => {
+				if (opcoes.herdavel) drop.addOption("", opcoes.rotuloHerdar);
+				for (const [chave, rotulo] of Object.entries(opcoes.opcoes)) drop.addOption(chave, rotulo);
+				drop.setValue(opcoes.valor ?? "");
+				// Dropdown pode usar `aplicar()`: é um clique único, não um arrasto — não há
+				// controle sendo manipulado quando o redesenho acontece (ver armadilha 1 do doc).
+				drop.onChange(async (valor) => {
+					opcoes.definir((valor || undefined) as T | undefined);
+					await this.aplicar();
+				});
+			});
+	}
+
+	/** Um toggle de estilo, com o botão de voltar ao herdado quando esta camada define o valor. */
+	private alternar(
+		el: HTMLElement,
+		opcoes: {
+			nome: string;
+			descricao: string;
+			valor: boolean;
+			definido: boolean;
+			definir: (v: boolean | undefined) => void;
+			herdavel: boolean;
+		},
+	): void {
+		const setting = new Setting(el)
+			.setName(opcoes.nome)
+			.setDesc(opcoes.descricao)
+			.addToggle((toggle) =>
+				toggle.setValue(opcoes.valor).onChange(async (valor) => {
+					opcoes.definir(valor);
+					await this.aplicar();
+				}),
+			);
+
+		if (opcoes.herdavel && opcoes.definido) {
+			setting.addExtraButton((b) =>
+				b
+					.setIcon("rotate-ccw")
+					.setTooltip("Voltar ao herdado")
+					.onClick(async () => {
+						opcoes.definir(undefined);
+						await this.aplicar();
+					}),
+			);
+		}
+	}
+
 	private desenharBotao(el: HTMLElement, quadrante: Quadrante, botao: Botao, indice: number): void {
 		const linha = el.createDiv({ cls: "dash-home-config-botao" });
 
@@ -1107,7 +1454,41 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				}),
 		);
 
-		// Segunda linha: o que o botão faz.
+		this.desenharDestino(linha, botao);
+
+		// Terceira linha: a aparência SÓ deste botão — a camada de cima da herança. É o que
+		// permite um botão verde e um vermelho no mesmo quadrante.
+		const secaoEstilo = criarAcordeao(linha, {
+			chave: `${botao.id}:estilo`,
+			titulo: "Aparência deste botão",
+			aninhado: true,
+		});
+
+		secaoEstilo.sePreenchido((corpo) => {
+			this.desenharCorDoBotao(corpo, botao);
+
+			this.desenharEstiloBotao(corpo, {
+				alvo: (botao.estilo ??= {}),
+				camada: "botao",
+				global: this.plugin.dados.estiloBotaoGlobal,
+				doQuadrante: quadrante.estiloBotao,
+				doBotao: botao.estilo,
+			});
+
+			new Setting(corpo).addButton((b) =>
+				b
+					.setButtonText("Voltar ao estilo do quadrante")
+					.setTooltip("Descarta os ajustes deste botão")
+					.onClick(async () => {
+						botao.estilo = {};
+						await this.aplicar();
+					}),
+			);
+		});
+	}
+
+	/** A linha do "o que o botão faz" — tipo da ação e destino. */
+	private desenharDestino(linha: HTMLElement, botao: Botao): void {
 		const destino = new Setting(linha).setClass("dash-home-config-botao-destino");
 		destino.addDropdown((drop) => {
 			drop.addOption("nota", "Abrir nota");
@@ -1243,6 +1624,57 @@ export class PainelConfigDashHome extends PluginSettingTab {
 function semPrefixo(id: string): string {
 	return id.startsWith("lucide-") ? id.slice("lucide-".length) : id;
 }
+
+/**
+ * As camadas em jogo ao desenhar os controles de aparência de botão.
+ *
+ * `alvo` é o objeto que os controles ESCREVEM (o estilo da camada sendo editada); as outras três
+ * são as camadas em vigor, usadas só para leitura — para calcular o herdado e para descobrir se
+ * alguém acima está sobrescrevendo.
+ */
+interface ContextoEstiloBotao {
+	/** Onde os controles gravam. É sempre uma das três camadas abaixo. */
+	alvo: EstiloBotao;
+	/** Qual camada `alvo` é — decide quais controles aparecem e se há opção de herdar. */
+	camada: Camada;
+	global: EstiloBotao | undefined;
+	doQuadrante: EstiloBotao | undefined;
+	doBotao: EstiloBotao | undefined;
+}
+
+/**
+ * O aviso de que uma camada ACIMA está mandando — o antídoto do bug da sessão 11, em que a
+ * configuração global era ignorada em silêncio e parecia quebrada.
+ */
+const AVISO_SOBRESCRITA: Partial<Record<Camada, string>> = {
+	quadrante: "⚠️ O quadrante sobrescreve isto.",
+	botao: "⚠️ Este botão tem valor próprio e ignora esta escolha.",
+};
+
+const NOME_ARRANJO: Record<ArranjoBotoes, string> = {
+	coluna: "Um embaixo do outro",
+	grade2: "Dois por linha",
+	grade3: "Três por linha",
+	chips: "Lado a lado (fluindo)",
+};
+
+const NOME_FORMA: Record<FormaBotao, string> = {
+	retangulo: "Retângulo",
+	pilula: "Pílula (bem arredondado)",
+	quadrado: "Quadrado (só ícone)",
+};
+
+const NOME_PINTURA: Record<PinturaBotao, string> = {
+	neutro: "Neutra (só o ícone colorido)",
+	fundo: "Fundo tingido",
+	contorno: "Contorno colorido",
+	solido: "Cor cheia",
+};
+
+const NOME_ALINHAMENTO: Record<AlinhamentoBotao, string> = {
+	esquerda: "À esquerda",
+	centro: "Centralizado",
+};
 
 /**
  * " (metade)", " (um terço)"… para as frações que têm nome. Ajuda a enxergar o tamanho sem

@@ -1,6 +1,14 @@
 import { MarkdownRenderer, setIcon, type App, type Component } from "obsidian";
 import { corCss, type Botao, type Dashboard, type DadosDashHome, type Quadrante } from "./dados";
 import { bordasDoQuadrante, resolverEstilo, variaveisDoQuadrante } from "./estilo";
+import {
+	colunasDoArranjo,
+	ehSoIcone,
+	resolverArranjo,
+	resolverEstiloBotao,
+	variaveisDoBotao,
+	type EstiloBotao,
+} from "./estilo-botao";
 import { executarAcao } from "./acoes";
 
 /**
@@ -138,9 +146,32 @@ function renderizarQuadrante(
 		return;
 	}
 
+	// O arranjo é do conjunto, não do botão: quantos cabem por linha é propriedade da lista. Por
+	// isso sai das duas camadas de cima (global → quadrante) e é aplicado no contêiner.
+	const arranjo = resolverArranjo(dados.estiloBotaoGlobal, quadrante.estiloBotao);
+	lista.addClass(`is-arranjo-${arranjo}`);
+	const colunas = colunasDoArranjo(arranjo);
+	if (colunas > 1) lista.style.setProperty("--dash-home-botao-colunas", String(colunas));
+
+	// A cor do quadrante é o fallback de cada botão que não escolhe a sua — é o comportamento que
+	// o plugin sempre teve, e agora é só o último degrau da herança.
+	const corDoQuadrante = corCss(quadrante.cor);
+
 	for (const botao of quadrante.botoes) {
-		renderizarBotao(lista, botao, opcoes);
+		renderizarBotao(lista, botao, opcoes, {
+			global: dados.estiloBotaoGlobal,
+			doQuadrante: quadrante.estiloBotao,
+			corDoQuadrante,
+		});
 	}
+}
+
+/** As camadas de herança que o botão precisa para se desenhar. */
+interface ContextoBotao {
+	global: EstiloBotao | undefined;
+	doQuadrante: EstiloBotao | undefined;
+	/** Já em valor CSS: a cor usada quando o botão não define a sua. */
+	corDoQuadrante: string;
 }
 
 /**
@@ -205,12 +236,45 @@ function renderizarMarkdown(card: HTMLElement, quadrante: Quadrante, opcoes: Opc
 	void MarkdownRenderer.render(app, fonte, corpo, opcoes.caminhoOrigem ?? "", componente);
 }
 
-function renderizarBotao(lista: HTMLElement, botao: Botao, opcoes: OpcoesRender): void {
+function renderizarBotao(
+	lista: HTMLElement,
+	botao: Botao,
+	opcoes: OpcoesRender,
+	ctx: ContextoBotao,
+): void {
 	// <a> em vez de <button> para o Ctrl+clique / clique do meio abrirem em nova aba de graça —
 	// é o comportamento que a usuária espera de qualquer link do Obsidian.
 	const el = lista.createEl("a", { cls: "dash-home-botao", href: "#" });
+
+	const estilo = resolverEstiloBotao(ctx.global, ctx.doQuadrante, botao.estilo);
+	// A cor própria do botão vence a do quadrante — é o que permite um verde e um vermelho lado a
+	// lado no mesmo card.
+	const cor = estilo.cor ? corCss(estilo.cor) : ctx.corDoQuadrante;
+
+	// setProperty escapa o valor: uma cor malformada vira declaração inválida e é ignorada.
+	for (const [prop, valor] of variaveisDoBotao(estilo, cor)) {
+		el.style.setProperty(prop, valor);
+	}
+
+	el.addClass(`is-pintura-${estilo.pintura}`);
+	el.addClass(`is-forma-${estilo.forma}`);
+	el.toggleClass("is-destaque", estilo.destaque);
+
+	const soIcone = ehSoIcone(estilo);
+	// Um botão só de ícone sem ícone nenhum seria um quadrado vazio e sem sentido: nesse caso o
+	// texto volta, porque é a única coisa que identifica o botão.
+	const mostrarSoIcone = soIcone && !!botao.icone;
+	el.toggleClass("is-so-icone", mostrarSoIcone);
+
 	if (botao.icone) setIcon(el.createSpan({ cls: "dash-home-botao-icone" }), botao.icone);
-	el.createSpan({ cls: "dash-home-botao-texto", text: botao.texto || "(sem nome)" });
+
+	if (mostrarSoIcone) {
+		// O nome vira tooltip: sem texto na tela, é o que diz para onde o botão leva.
+		el.setAttribute("aria-label", botao.texto || "(sem nome)");
+		el.setAttribute("title", botao.texto || "(sem nome)");
+	} else {
+		el.createSpan({ cls: "dash-home-botao-texto", text: botao.texto || "(sem nome)" });
+	}
 
 	if (opcoes.miniatura) {
 		// Sem listener e sem href real: na miniatura o botão é uma imagem do que vai existir.

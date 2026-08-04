@@ -1,6 +1,7 @@
 import { Notice, TFile, TFolder, normalizePath, type App } from "obsidian";
 import type { Dashboard } from "./dados";
 import type { EstiloQuadrante } from "./estilo";
+import type { EstiloBotao } from "./estilo-botao";
 
 /**
  * A ponte entre o data.json e o vault: gera a nota do dashboard e a mantém atualizada.
@@ -19,7 +20,11 @@ const ABRE = "```dash-home";
 const FECHA = "```";
 
 /** O YAML do bloco. Legível de propósito: se a usuária abrir a nota, tem que dar pra entender. */
-export function gerarBloco(dashboard: Dashboard, estiloGlobal?: EstiloQuadrante): string {
+export function gerarBloco(
+	dashboard: Dashboard,
+	estiloGlobal?: EstiloQuadrante,
+	estiloBotaoGlobal?: EstiloBotao,
+): string {
 	const linhas: string[] = [];
 	linhas.push(ABRE);
 	linhas.push(`# Gerado pelo plugin Dash Home — edite em Configurações → Dash Home`);
@@ -31,12 +36,17 @@ export function gerarBloco(dashboard: Dashboard, estiloGlobal?: EstiloQuadrante)
 	linhas.push(`largura: ${dashboard.largura}`);
 
 	// A aparência global, que vale para todos os quadrantes deste dashboard.
-	const entradasGlobal = Object.entries(estiloGlobal ?? {}).filter(([, v]) => v !== undefined);
+	const entradasGlobal = entradasDefinidas(estiloGlobal);
 	if (entradasGlobal.length > 0) {
 		linhas.push(`estilo:`);
-		for (const [chave, valor] of entradasGlobal) {
-			linhas.push(`  ${chave}: ${typeof valor === "string" ? aspas(valor) : valor}`);
-		}
+		for (const linha of linhasDeEstilo(entradasGlobal, "  ")) linhas.push(linha);
+	}
+
+	// E a aparência global dos botões — a base da herança de três camadas.
+	const entradasBotaoGlobal = entradasDefinidas(estiloBotaoGlobal);
+	if (entradasBotaoGlobal.length > 0) {
+		linhas.push(`estiloBotao:`);
+		for (const linha of linhasDeEstilo(entradasBotaoGlobal, "  ")) linhas.push(linha);
 	}
 
 	linhas.push(`quadrantes:`);
@@ -54,10 +64,15 @@ export function gerarBloco(dashboard: Dashboard, estiloGlobal?: EstiloQuadrante)
 		// O estilo próprio do quadrante (o que ele sobrescreve do global). Faltava aqui: o bloco
 		// descrevia o dashboard sem a aparência, então não servia como registro do que foi
 		// configurado. Só sai o que o quadrante realmente define — o herdado não é repetido.
-		for (const [chave, valor] of Object.entries(quadrante.estilo ?? {})) {
-			// `typeof`, não truthiness: 0 (arredondamento nenhum) e false são escolhas válidas.
-			if (valor === undefined) continue;
-			linhas.push(`    ${chave}: ${typeof valor === "string" ? aspas(valor) : valor}`);
+		for (const linha of linhasDeEstilo(entradasDefinidas(quadrante.estilo), "    ")) {
+			linhas.push(linha);
+		}
+
+		// A aparência dos botões deste quadrante — a camada do meio da herança.
+		const entradasBotao = entradasDefinidas(quadrante.estiloBotao);
+		if (entradasBotao.length > 0) {
+			linhas.push(`    estiloBotao:`);
+			for (const linha of linhasDeEstilo(entradasBotao, "      ")) linhas.push(linha);
 		}
 
 		if (quadrante.conteudo === "separador") {
@@ -91,11 +106,36 @@ export function gerarBloco(dashboard: Dashboard, estiloGlobal?: EstiloQuadrante)
 			if (botao.icone) linhas.push(`        icone: ${botao.icone}`);
 			linhas.push(`        tipo: ${botao.tipo}`);
 			linhas.push(`        destino: ${aspas(botao.destino)}`);
+
+			// A camada de cima da herança: só o que ESTE botão define, não o que ele herda.
+			const entradasDoBotao = entradasDefinidas(botao.estilo);
+			if (entradasDoBotao.length > 0) {
+				linhas.push(`        estilo:`);
+				for (const linha of linhasDeEstilo(entradasDoBotao, "          ")) linhas.push(linha);
+			}
 		}
 	}
 
 	linhas.push(FECHA);
 	return linhas.join("\n");
+}
+
+/**
+ * Os campos que um objeto de estilo realmente define.
+ *
+ * O filtro é `!== undefined` e NÃO truthiness: `radius: 0` (sem arredondamento), `espaco: 0` e
+ * `destaque: false` são escolhas válidas que um teste de verdade descartaria em silêncio — o
+ * mesmo erro que os testes pegaram nas sessões 9 e 11.
+ */
+function entradasDefinidas(estilo: object | undefined): Array<[string, unknown]> {
+	return Object.entries(estilo ?? {}).filter(([, v]) => v !== undefined);
+}
+
+/** As entradas como linhas YAML indentadas. Strings vão entre aspas; números e booleanos, crus. */
+function linhasDeEstilo(entradas: Array<[string, unknown]>, recuo: string): string[] {
+	return entradas.map(
+		([chave, valor]) => `${recuo}${chave}: ${typeof valor === "string" ? aspas(valor) : valor}`,
+	);
 }
 
 /**
@@ -116,6 +156,7 @@ export async function escreverDashboard(
 	app: App,
 	dashboard: Dashboard,
 	estiloGlobal?: EstiloQuadrante,
+	estiloBotaoGlobal?: EstiloBotao,
 ): Promise<TFile | null> {
 	const bruto = dashboard.caminhoNota?.trim() ?? "";
 	// Um caminho vazio viraria ".md" — um arquivo oculto e sem nome. Melhor não escrever nada e
@@ -123,7 +164,7 @@ export async function escreverDashboard(
 	if (!bruto) return null;
 
 	const caminho = normalizePath(bruto.toLowerCase().endsWith(".md") ? bruto : `${bruto}.md`);
-	const bloco = gerarBloco(dashboard, estiloGlobal);
+	const bloco = gerarBloco(dashboard, estiloGlobal, estiloBotaoGlobal);
 
 	try {
 		const existente = acharArquivo(app, caminho);

@@ -1,5 +1,6 @@
 import type { Plugin } from "obsidian";
 import type { EstiloQuadrante } from "./estilo";
+import { normalizarEstiloBotao, type EstiloBotao } from "./estilo-botao";
 
 /**
  * Dados persistidos do plugin (data.json): os dashboards que a usuária montou nas configurações.
@@ -33,6 +34,11 @@ export interface Botao {
 	 * - comando: id do comando ("my-tasks:abrir-kanban")
 	 */
 	destino: string;
+	/**
+	 * Aparência só deste botão; o que não define, herda do quadrante e depois do global.
+	 * É a terceira camada da herança — ver `estilo-botao.ts`.
+	 */
+	estilo?: EstiloBotao;
 }
 
 export interface Quadrante {
@@ -48,6 +54,11 @@ export interface Quadrante {
 	cor?: string;
 	/** Aparência só deste quadrante; o que não define, herda do estilo global. */
 	estilo?: EstiloQuadrante;
+	/**
+	 * Aparência dos botões DESTE quadrante; o que não define, herda do global — e cada botão
+	 * ainda pode sobrescrever isto. Camada do meio da herança de três níveis.
+	 */
+	estiloBotao?: EstiloBotao;
 	/**
 	 * Quantas colunas do grid este quadrante ocupa. `undefined` = 1 (o padrão).
 	 * "cheio" ocupa a linha inteira, seja qual for o número de colunas do dashboard.
@@ -109,6 +120,11 @@ export interface DadosDashHome {
 	mostrarTitulos: boolean;
 	/** Aparência aplicada a todos os quadrantes, salvo o que cada um sobrescrever. */
 	estiloGlobal: EstiloQuadrante;
+	/**
+	 * Aparência aplicada a todos os botões, salvo o que cada quadrante — e depois cada botão —
+	 * sobrescrever. Base da herança de três níveis.
+	 */
+	estiloBotaoGlobal: EstiloBotao;
 }
 
 /**
@@ -164,6 +180,7 @@ export const DADOS_PADRAO: DadosDashHome = {
 	tamanhoBotao: "medio",
 	mostrarTitulos: true,
 	estiloGlobal: {},
+	estiloBotaoGlobal: {},
 };
 
 /** Devolvido quando não há dashboard nenhum. Congelado: ninguém escreve nele por acidente. */
@@ -227,6 +244,10 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 	// funcionalidade viria sem ele.
 	if (!dados.estiloGlobal || typeof dados.estiloGlobal !== "object") dados.estiloGlobal = {};
 
+	// Mesmo motivo, para o estilo de botão: um data.json salvo antes desta funcionalidade vem sem
+	// ele. A normalização descarta campo inválido em vez de corrigi-lo — ver `estilo-botao.ts`.
+	dados.estiloBotaoGlobal = normalizarEstiloBotao(dados.estiloBotaoGlobal) ?? {};
+
 	for (const dash of dados.dashboards) {
 		dash.colunas = limitarColunas(dash.colunas);
 		dash.largura = limitarLargura(dash.largura);
@@ -234,6 +255,8 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 		if (!Array.isArray(dash.quadrantes)) dash.quadrantes = [];
 		for (const quad of dash.quadrantes) {
 			if (quad.estilo && typeof quad.estilo !== "object") delete quad.estilo;
+			// `undefined` apaga a chave na serialização — não fica `estiloBotao: null` no data.json.
+			quad.estiloBotao = normalizarEstiloBotao(quad.estiloBotao);
 			quad.largura = limitarLarguraQuadrante(quad.largura, dash.colunas);
 			if (quad.separador && typeof quad.separador !== "object") delete quad.separador;
 			if (quad.separador && typeof quad.separador.espaco === "number") {
@@ -245,6 +268,7 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 			// fallback seguro (no pior caso avisa que a nota não existe).
 			for (const botao of quad.botoes) {
 				if (!TIPOS_VALIDOS.has(botao.tipo)) botao.tipo = "nota";
+				botao.estilo = normalizarEstiloBotao(botao.estilo);
 			}
 		}
 	}
@@ -270,8 +294,20 @@ export function limitarColunas(n: unknown): number {
 	return Math.min(6, Math.max(1, valor));
 }
 
+/**
+ * Cópia profunda o bastante: os objetos de estilo são aninhados, e um spread raso os deixaria
+ * compartilhados entre o original e a cópia — mexer num mudaria o outro.
+ */
 function clonarDashboard(d: Dashboard): Dashboard {
-	return { ...d, quadrantes: d.quadrantes.map((q) => ({ ...q, botoes: q.botoes.map((b) => ({ ...b })) })) };
+	return {
+		...d,
+		quadrantes: d.quadrantes.map((q) => ({
+			...q,
+			estilo: q.estilo ? { ...q.estilo } : undefined,
+			estiloBotao: q.estiloBotao ? { ...q.estiloBotao } : undefined,
+			botoes: q.botoes.map((b) => ({ ...b, estilo: b.estilo ? { ...b.estilo } : undefined })),
+		})),
+	};
 }
 
 /**

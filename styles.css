@@ -172,10 +172,19 @@
 	height: var(--dash-home-icone, 16px);
 }
 
-/* Com fundo colorido, o botão precisa de um fundo que ainda o destaque do card. */
-.dash-home-quadrante.is-fundo-colorido .dash-home-botao {
+/* Com fundo colorido, o botão precisa de um fundo que ainda o destaque do card.
+ * Só vale para o botão neutro: quem escolheu contorno, sólido ou fundo tingido já decidiu o
+ * próprio fundo, e sobrescrevê-lo aqui anularia a escolha em silêncio. */
+.dash-home-quadrante.is-fundo-colorido .dash-home-botao.is-pintura-neutro {
 	background: var(--background-primary);
 }
+
+/* ── Os botões ───────────────────────────────────────────────────────────────────────────
+ *
+ * O arranjo é do CONJUNTO (quantos cabem por linha é propriedade da lista, não do botão), então
+ * mora aqui na `.dash-home-botoes`. A aparência de cada botão vem de variáveis inline, aplicadas
+ * pelo render depois de resolver a herança global → quadrante → botão.
+ */
 
 .dash-home-botoes {
 	display: flex;
@@ -183,35 +192,109 @@
 	gap: 0.35em;
 }
 
+/* Grade de 2 ou 3 por linha. `minmax(0, 1fr)` — e não `1fr` — porque a largura mínima automática
+ * de um item de grid é o conteúdo dele: sem isso, um botão de texto longo estoura a coluna em vez
+ * de truncar com reticências. */
+.dash-home-botoes.is-arranjo-grade2,
+.dash-home-botoes.is-arranjo-grade3 {
+	display: grid;
+	grid-template-columns: repeat(var(--dash-home-botao-colunas, 2), minmax(0, 1fr));
+}
+
+/* Chips: fluem na largura disponível, cada um do tamanho do próprio conteúdo. */
+.dash-home-botoes.is-arranjo-chips {
+	flex-direction: row;
+	flex-wrap: wrap;
+}
+
 .dash-home-botao {
 	display: flex;
 	align-items: center;
+	justify-content: var(--dash-home-botao-alinha, flex-start);
 	gap: 0.6em;
-	padding: 0.5em 0.7em;
-	border-radius: var(--radius-s);
+	padding: var(--dash-home-botao-altura, 8px) 0.7em;
+	border-radius: var(--dash-home-botao-radius, var(--radius-s));
 	background: var(--background-primary);
 	border: 1px solid transparent;
 	color: var(--text-normal);
 	text-decoration: none;
 	cursor: pointer;
+	min-width: 0;
 	transition: background 120ms ease, border-color 120ms ease;
+}
+
+/* O tamanho da letra só entra quando a usuária escolheu um. Sem a variável, a regra inteira é
+ * inválida e o botão continua herdando a fonte — que é o que o dropdown "Tamanho dos botões"
+ * define. É o mesmo motivo de `variaveisDoBotao` não emitir um padrão para este campo. */
+.dash-home-botao {
+	font-size: var(--dash-home-botao-fonte);
 }
 
 .dash-home-botao:hover {
 	background: var(--background-modifier-hover);
-	border-color: var(--dash-home-cor);
+	border-color: var(--dash-home-botao-cor, var(--dash-home-cor));
 	text-decoration: none;
+}
+
+/* ── Como a cor pinta o botão ───────────────────────────────────────────────────────────── */
+
+/* "neutro" é o padrão histórico: fundo do tema, cor só no ícone. Nada a declarar. */
+
+.dash-home-botao.is-pintura-fundo {
+	background: var(--dash-home-botao-fundo, var(--background-primary));
+}
+
+.dash-home-botao.is-pintura-contorno {
+	background: transparent;
+	border-color: var(--dash-home-botao-cor, var(--dash-home-cor));
+}
+
+/* Sólido: a cor toma o botão inteiro, e o texto passa a ser o que contrasta com ELA, não com o
+ * fundo do tema. `--text-on-accent` é a variável que o Obsidian usa para isso nos próprios botões
+ * de destaque, então acompanha tema claro/escuro sem um segundo conjunto de regras. */
+.dash-home-botao.is-pintura-solido {
+	background: var(--dash-home-botao-cor, var(--dash-home-cor));
+	color: var(--text-on-accent);
+}
+
+.dash-home-botao.is-pintura-solido .dash-home-botao-icone {
+	color: var(--text-on-accent);
+}
+
+.dash-home-botao.is-pintura-solido:hover {
+	background: var(--dash-home-botao-cor, var(--dash-home-cor));
+	filter: brightness(1.1);
+}
+
+/* ── Formato ────────────────────────────────────────────────────────────────────────────── */
+
+/* Quadrado: um botão de ícone. `aspect-ratio` mantém a proporção seja qual for a altura
+ * configurada, e a largura automática impede que o grid o estique. */
+.dash-home-botao.is-forma-quadrado {
+	aspect-ratio: 1;
+	justify-content: center;
+	padding: var(--dash-home-botao-altura, 8px);
+}
+
+.dash-home-botao.is-so-icone {
+	justify-content: center;
+	gap: 0;
+}
+
+/* Destaque: pesa mais que os vizinhos. */
+.dash-home-botao.is-destaque {
+	font-weight: var(--font-semibold);
 }
 
 .dash-home-botao-icone {
 	display: flex;
-	color: var(--dash-home-cor);
+	color: var(--dash-home-botao-cor, var(--dash-home-cor));
 	flex-shrink: 0;
 }
 
 .dash-home-botao-icone svg {
-	width: 1em;
-	height: 1em;
+	width: var(--dash-home-botao-icone, 16px);
+	height: var(--dash-home-botao-icone, 16px);
 }
 
 .dash-home-botao-texto {
@@ -220,15 +303,20 @@
 	white-space: nowrap;
 }
 
-/* Tamanhos dos botões */
+/* Tamanhos dos botões (o dropdown global pequeno/médio/grande).
+ *
+ * O fallback da variável é o que resolve a precedência: estes seletores são 0,2,0 e venceriam a
+ * regra de `font-size` do botão (0,1,0), então a escolha da usuária seria ignorada nos tamanhos
+ * pequeno e grande. Declarando a variável COM o valor do tamanho como fallback, quem escolheu um
+ * px próprio vê o px; quem não escolheu vê o tamanho do dropdown. */
 .dash-home-botoes-pequeno .dash-home-botao {
 	padding: 0.3em 0.55em;
-	font-size: var(--font-ui-smaller);
+	font-size: var(--dash-home-botao-fonte, var(--font-ui-smaller));
 }
 
 .dash-home-botoes-grande .dash-home-botao {
 	padding: 0.75em 0.9em;
-	font-size: var(--font-ui-medium);
+	font-size: var(--dash-home-botao-fonte, var(--font-ui-medium));
 }
 
 .dash-home-vazio,
@@ -311,6 +399,25 @@
 	font-size: var(--font-ui-smaller);
 	font-style: italic;
 	padding: 0.5em 0;
+}
+
+/* Uma explicação curta no topo de uma seção — para dizer o alcance do que vem abaixo (ex.: "vale
+ * para os botões deste quadrante"). Diferente de `config-vazio`: não é ausência, é contexto. */
+.dash-home-config-nota {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	padding: 0.2em 0 0.6em;
+}
+
+/* Divide uma seção longa em partes (ex.: separar "Botões" do resto da Aparência global). */
+.dash-home-config-subtitulo {
+	margin: 1.4em 0 0.2em;
+	padding-top: 0.8em;
+	border-top: 1px solid var(--background-modifier-border);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
 }
 
 .dash-home-config-acao.is-desativado {
