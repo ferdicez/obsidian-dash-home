@@ -56,22 +56,37 @@
    dá para simplesmente pedir mais largura: o bloco cresce para os dois lados com margem
    negativa simétrica. `--dash-home-largura` limita o quanto ele cresce (sem ela, vai ao
    máximo disponível). O max-width nunca passa da largura da viewport do container. */
-.dash-home-dashboard.is-largura-total {
-	width: var(--dash-home-largura, 100cqw);
-	max-width: 100cqw;
-	margin-left: 50%;
-	transform: translateX(-50%);
+/* A tentativa anterior (`margin-left: 50%` + `translateX(-50%)`) estava ERRADA e cortava o
+   dashboard para fora da tela: os 50% são medidos sobre o container PAI, não sobre a área
+   disponível, então em container estreito o bloco saía deslocado à esquerda. E o `100cqw`
+   referenciava o próprio dashboard, que declara `container-type` — media a si mesmo.
+
+   A forma correta no Obsidian é soltar a trava de largura de leitura no ancestral que a impõe,
+   em vez de empurrar o bloco para fora dela. O bloco então cresce naturalmente, sem deslocamento.
+
+   `:has()` é o que permite mirar só as notas que contêm um dashboard largo — sem ele, teríamos
+   de alargar todas as notas, o que mudaria o vault inteiro. */
+.markdown-preview-sizer:has(> div > .dash-home-dashboard.is-largura-total),
+.markdown-preview-sizer:has(> .dash-home-dashboard.is-largura-total),
+.cm-sizer:has(.dash-home-dashboard.is-largura-total) {
+	max-width: none !important;
+	width: 100% !important;
 }
 
-/* Sem container-query disponível (editor em modo fonte, por exemplo), cai numa aproximação
-   que ainda alarga o bloco sem estourar a janela. */
-@supports not (width: 100cqw) {
-	.dash-home-dashboard.is-largura-total {
-		width: var(--dash-home-largura, 100%);
-		max-width: 100%;
-		margin-left: 0;
-		transform: none;
-	}
+/* O bloco em si: ocupa o que houver, ou a largura fixa escolhida — e nunca mais que o disponível,
+   para a largura fixa não criar rolagem horizontal em tela pequena. */
+.dash-home-dashboard.is-largura-total {
+	width: var(--dash-home-largura, 100%);
+	max-width: 100%;
+	margin-left: 0;
+	margin-right: 0;
+}
+
+/* Alguns temas (Minimal, entre outros) impõem a largura por outro caminho. Soltar também o
+   container de leitura cobre esses casos sem afetar notas que não têm dashboard largo. */
+.markdown-preview-view:has(.dash-home-dashboard.is-largura-total) .markdown-preview-sizer,
+.markdown-source-view:has(.dash-home-dashboard.is-largura-total) .cm-contentContainer {
+	max-width: none !important;
 }
 
 .dash-home-quadrante {

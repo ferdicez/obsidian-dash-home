@@ -308,9 +308,12 @@ export class PainelConfigDashHome extends PluginSettingTab {
 		if (larguraNumerica) {
 			new Setting(el)
 				.setName("Largura em pixels")
+				.setDesc("O dashboard nunca passa da largura disponível, mesmo que o valor seja maior.")
 				.addSlider((slider) =>
 					slider
-						.setLimits(400, 2400, 20)
+						// Teto de 1600: acima disso não há tela onde a diferença apareça, e um valor
+						// maior que a janela só confunde (parece que a configuração não funcionou).
+						.setLimits(400, 1600, 20)
 						.setValue(dashboard.largura as number)
 						.setDynamicTooltip()
 						.onChange(async (valor) => {

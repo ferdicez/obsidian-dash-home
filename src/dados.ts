@@ -185,11 +185,15 @@ export function limitarLarguraQuadrante(
 	return n;
 }
 
-/** Largura em px permitida. Abaixo de 400 o grid não cabe; acima de 3000 não há tela. */
+/**
+ * Largura em px permitida. Abaixo de 400 o grid não cabe; acima de 1600 não há tela onde a
+ * diferença apareça — e um valor maior que a janela dá a impressão de que a configuração não
+ * funcionou (o CSS trava em `max-width: 100%` de qualquer forma).
+ */
 export function limitarLargura(valor: unknown): "leitura" | "total" | number {
 	if (valor === "total" || valor === "leitura") return valor;
 	if (typeof valor === "number" && Number.isFinite(valor)) {
-		return Math.min(3000, Math.max(400, Math.round(valor)));
+		return Math.min(1600, Math.max(400, Math.round(valor)));
 	}
 	return "leitura";
 }
