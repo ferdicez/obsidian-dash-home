@@ -258,6 +258,8 @@ function renderizarBotao(
 
 	el.addClass(`is-pintura-${estilo.pintura}`);
 	el.addClass(`is-forma-${estilo.forma}`);
+	// Só a escolha explícita vira classe: "auto" é a ausência de regra, o comportamento de sempre.
+	el.toggleClass("is-letra-texto", estilo.corLetra === "texto");
 	el.toggleClass("is-destaque", estilo.destaque);
 
 	const soIcone = ehSoIcone(estilo);

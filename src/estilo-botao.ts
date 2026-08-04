@@ -30,6 +30,18 @@ export type AlinhamentoBotao = "esquerda" | "centro";
 /** Como a cor entra no botão. */
 export type PinturaBotao = "neutro" | "fundo" | "contorno" | "solido";
 
+/**
+ * A cor da letra do botão.
+ *
+ * Existe por causa de um caso concreto: com pintura "cor cheia" e uma cor clara (um amarelo
+ * pastel), a letra branca automática some no fundo. As duas opções são as duas saídas possíveis
+ * sem inventar um seletor de cor novo:
+ *
+ * - "auto": o comportamento de hoje — branca sobre cor cheia, cor de texto normal nas demais.
+ * - "texto": a cor de texto normal do tema, sempre. É a que resolve o amarelo claro.
+ */
+export type CorLetraBotao = "auto" | "texto";
+
 export interface EstiloBotao {
 	/**
 	 * Como os botões se arrumam. Só faz sentido no nível do quadrante ou global — um botão
@@ -50,6 +62,8 @@ export interface EstiloBotao {
 	alinhamento?: AlinhamentoBotao;
 	/** Como a cor pinta o botão. */
 	pintura?: PinturaBotao;
+	/** A cor da letra: automática (branca sobre cor cheia) ou a cor de texto do tema. */
+	corLetra?: CorLetraBotao;
 	/**
 	 * A cor deste botão. Mesmo formato de `Quadrante.cor`: nome do tema ("azul") ou hex livre.
 	 * `undefined` usa a cor do quadrante — que é o comportamento que o plugin sempre teve.
@@ -82,6 +96,8 @@ export const ESTILO_BOTAO_PADRAO: Required<Omit<EstiloBotao, "cor" | "tamanhoFon
 	tamanhoFonte: undefined,
 	alinhamento: "esquerda",
 	pintura: "neutro",
+	// "auto" é o comportamento que já existia antes deste campo.
+	corLetra: "auto",
 	cor: undefined,
 	destaque: false,
 	soIcone: false,
@@ -220,6 +236,7 @@ const ARRANJOS = new Set<string>(["coluna", "grade2", "grade3", "chips"]);
 const FORMAS = new Set<string>(["retangulo", "pilula", "quadrado"]);
 const ALINHAMENTOS = new Set<string>(["esquerda", "centro"]);
 const PINTURAS = new Set<string>(["neutro", "fundo", "contorno", "solido"]);
+const CORES_LETRA = new Set<string>(["auto", "texto"]);
 
 /**
  * Blindagem contra data.json corrompido ou editado à mão. Roda na carga, uma vez só — o painel e
@@ -240,6 +257,7 @@ export function normalizarEstiloBotao(valor: unknown): EstiloBotao | undefined {
 		saida.alinhamento = e.alinhamento as AlinhamentoBotao;
 	}
 	if (typeof e.pintura === "string" && PINTURAS.has(e.pintura)) saida.pintura = e.pintura as PinturaBotao;
+	if (typeof e.corLetra === "string" && CORES_LETRA.has(e.corLetra)) saida.corLetra = e.corLetra as CorLetraBotao;
 	if (typeof e.cor === "string" && e.cor.trim()) saida.cor = e.cor.trim();
 	// `typeof`, não truthiness: `false` é uma escolha válida (desligar o destaque herdado).
 	if (typeof e.destaque === "boolean") saida.destaque = e.destaque;

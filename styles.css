@@ -266,6 +266,22 @@
 	filter: brightness(1.1);
 }
 
+/* ── A cor da letra ─────────────────────────────────────────────────────────────────────
+ *
+ * O caso que motivou isto: com "cor cheia" e uma cor clara (um amarelo pastel), a letra branca
+ * automática some no fundo. Aqui a letra passa a ser a cor de texto normal do tema.
+ *
+ * A classe repetida (0,2,0) é o que faz esta regra vencer `.dash-home-botao.is-pintura-solido`,
+ * que também é 0,2,0 mas vem antes — e o ícone precisa do mesmo tratamento, senão ficaria branco
+ * sozinho. Mesmo truque de especificidade do `.dash-home-swatch.dash-home-swatch` (s4). */
+.dash-home-botao.is-letra-texto.is-letra-texto {
+	color: var(--text-normal);
+}
+
+.dash-home-botao.is-letra-texto.is-letra-texto .dash-home-botao-icone {
+	color: var(--text-normal);
+}
+
 /* ── Formato ────────────────────────────────────────────────────────────────────────────── */
 
 /* Quadrado: um botão de ícone. `aspect-ratio` mantém a proporção seja qual for a altura

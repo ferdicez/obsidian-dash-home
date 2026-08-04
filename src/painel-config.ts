@@ -26,6 +26,7 @@ import {
 	type AlinhamentoBotao,
 	type ArranjoBotoes,
 	type Camada,
+	type CorLetraBotao,
 	type EstiloBotao,
 	type FormaBotao,
 	type PinturaBotao,
@@ -1170,14 +1171,22 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			quemDefine(campo, ctx.global, ctx.doQuadrante, ctx.doBotao);
 
 		/**
+		 * O rótulo da opção "sem escolha". Na global não há de quem herdar — ali "não escolher"
+		 * significa usar o padrão do plugin, e chamar isso de "herdar" seria mentira.
+		 */
+		const semEscolha = (rotulo: string): string =>
+			camada === "global" ? `Padrão (${rotulo})` : `Herdar (${rotulo})`;
+
+		/**
 		 * A descrição de um controle: diz quando o valor é herdado, e — o caso que importa —
 		 * quando uma camada ACIMA desta está sobrescrevendo, tornando este controle inócuo.
 		 */
 		const descrever = (campo: keyof EstiloBotao, rotuloHerdado: string): string => {
 			const quem = origem(campo);
 			if (alvo[campo] !== undefined) return "Definido aqui.";
-			if (quem === "padrao" || quem === camada) return `Herdando: ${rotuloHerdado}.`;
-			return `Herdando: ${rotuloHerdado}. ${AVISO_SOBRESCRITA[quem] ?? ""}`.trim();
+			const base = camada === "global" ? `Padrão: ${rotuloHerdado}.` : `Herdando: ${rotuloHerdado}.`;
+			if (quem === "padrao" || quem === camada) return base;
+			return `${base} ${AVISO_SOBRESCRITA[quem] ?? ""}`.trim();
 		};
 
 		// ── Arranjo: só nas camadas que mandam numa LISTA de botões ──────────────────────────
@@ -1190,10 +1199,11 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				descricao:
 					alvo.arranjo !== undefined
 						? "Definido aqui."
-						: `Herdando: ${NOME_ARRANJO[arranjoHerdado]}.`,
+						: camada === "global"
+							? `Padrão: ${NOME_ARRANJO[arranjoHerdado]}.`
+							: `Herdando: ${NOME_ARRANJO[arranjoHerdado]}.`,
 				opcoes: NOME_ARRANJO,
-				herdavel: camada !== "global",
-				rotuloHerdar: `Herdar (${NOME_ARRANJO[arranjoHerdado]})`,
+				rotuloHerdar: semEscolha(NOME_ARRANJO[arranjoHerdado]),
 				valor: alvo.arranjo,
 				definir: (v) => {
 					alvo.arranjo = v;
@@ -1205,8 +1215,7 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			nome: "Formato",
 			descricao: descrever("forma", NOME_FORMA[herdado.forma]),
 			opcoes: NOME_FORMA,
-			herdavel: camada !== "global",
-			rotuloHerdar: `Herdar (${NOME_FORMA[herdado.forma]})`,
+			rotuloHerdar: semEscolha(NOME_FORMA[herdado.forma]),
 			valor: alvo.forma,
 			definir: (v) => {
 				alvo.forma = v;
@@ -1217,11 +1226,21 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			nome: "Cor do botão",
 			descricao: descrever("pintura", NOME_PINTURA[herdado.pintura]),
 			opcoes: NOME_PINTURA,
-			herdavel: camada !== "global",
-			rotuloHerdar: `Herdar (${NOME_PINTURA[herdado.pintura]})`,
+			rotuloHerdar: semEscolha(NOME_PINTURA[herdado.pintura]),
 			valor: alvo.pintura,
 			definir: (v) => {
 				alvo.pintura = v;
+			},
+		});
+
+		this.escolha<CorLetraBotao>(el, {
+			nome: "Cor da letra",
+			descricao: descrever("corLetra", NOME_COR_LETRA[herdado.corLetra]),
+			opcoes: NOME_COR_LETRA,
+			rotuloHerdar: semEscolha(NOME_COR_LETRA[herdado.corLetra]),
+			valor: alvo.corLetra,
+			definir: (v) => {
+				alvo.corLetra = v;
 			},
 		});
 
@@ -1229,8 +1248,7 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			nome: "Alinhamento",
 			descricao: descrever("alinhamento", NOME_ALINHAMENTO[herdado.alinhamento]),
 			opcoes: NOME_ALINHAMENTO,
-			herdavel: camada !== "global",
-			rotuloHerdar: `Herdar (${NOME_ALINHAMENTO[herdado.alinhamento]})`,
+			rotuloHerdar: semEscolha(NOME_ALINHAMENTO[herdado.alinhamento]),
 			valor: alvo.alinhamento,
 			definir: (v) => {
 				alvo.alinhamento = v;
@@ -1258,7 +1276,6 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			definir: (v) => {
 				alvo.soIcone = v;
 			},
-			herdavel: camada !== "global",
 		});
 
 		this.alternar(el, {
@@ -1269,7 +1286,6 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			definir: (v) => {
 				alvo.destaque = v;
 			},
-			herdavel: camada !== "global",
 		});
 	}
 
@@ -1341,7 +1357,6 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			nome: string;
 			descricao: string;
 			opcoes: Record<string, string>;
-			herdavel: boolean;
 			rotuloHerdar: string;
 			valor: T | undefined;
 			definir: (v: T | undefined) => void;
@@ -1351,7 +1366,10 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			.setName(opcoes.nome)
 			.setDesc(opcoes.descricao)
 			.addDropdown((drop) => {
-				if (opcoes.herdavel) drop.addOption("", opcoes.rotuloHerdar);
+				// A opção de "não escolher" existe em TODAS as camadas, inclusive na global — lá
+				// ela devolve ao padrão de fábrica. Sem isso não havia caminho de volta: escolher
+				// um formato uma vez o prendia para sempre (bug relatado na s13).
+				drop.addOption("", opcoes.rotuloHerdar);
 				for (const [chave, rotulo] of Object.entries(opcoes.opcoes)) drop.addOption(chave, rotulo);
 				drop.setValue(opcoes.valor ?? "");
 				// Dropdown pode usar `aplicar()`: é um clique único, não um arrasto — não há
@@ -1363,7 +1381,13 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			});
 	}
 
-	/** Um toggle de estilo, com o botão de voltar ao herdado quando esta camada define o valor. */
+	/**
+	 * Um toggle de estilo, com o botão de voltar ao herdado quando esta camada define o valor.
+	 *
+	 * O botão de desfazer aparece em TODAS as camadas (na global ele volta ao padrão de fábrica).
+	 * Sem isso, desligar um toggle cujo herdado já era `false` gravava um `false` explícito que
+	 * não se distingue do herdado — e, como o desfazer não aparecia, o estado ficava preso (s13).
+	 */
 	private alternar(
 		el: HTMLElement,
 		opcoes: {
@@ -1372,7 +1396,6 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			valor: boolean;
 			definido: boolean;
 			definir: (v: boolean | undefined) => void;
-			herdavel: boolean;
 		},
 	): void {
 		const setting = new Setting(el)
@@ -1385,7 +1408,7 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				}),
 			);
 
-		if (opcoes.herdavel && opcoes.definido) {
+		if (opcoes.definido) {
 			setting.addExtraButton((b) =>
 				b
 					.setIcon("rotate-ccw")
@@ -1669,6 +1692,11 @@ const NOME_PINTURA: Record<PinturaBotao, string> = {
 	fundo: "Fundo tingido",
 	contorno: "Contorno colorido",
 	solido: "Cor cheia",
+};
+
+const NOME_COR_LETRA: Record<CorLetraBotao, string> = {
+	auto: "Automática (branca no botão preenchido)",
+	texto: "Cor de texto do tema",
 };
 
 const NOME_ALINHAMENTO: Record<AlinhamentoBotao, string> = {
