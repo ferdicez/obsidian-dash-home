@@ -446,17 +446,54 @@
 	padding-top: 0;
 }
 
-/* Aviso de linha que não fecha — o grid preenche buracos sozinho, então sem este texto a
-   usuária só descobre o problema pelo resultado visual, sem pista da causa. */
-.dash-home-config-aviso {
-	margin: 0.4em 0;
-	padding: 0.5em 0.7em;
-	border-left: 3px solid var(--color-orange);
-	border-radius: var(--radius-s);
-	background: var(--background-modifier-hover);
+/* Mapa das linhas: faixas proporcionais mostrando como os quadrantes se agrupam de fato.
+   As larguras vêm de `flex-grow` (definido inline com a fatia de cada um), então as proporções
+   são as reais — não uma aproximação desenhada. */
+.dash-home-config-mapa {
+	margin: 0.5em 0 0.2em;
+}
+
+.dash-home-config-mapa-titulo {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
-	line-height: 1.4;
+	margin-bottom: 0.3em;
+}
+
+.dash-home-config-mapa-linha {
+	display: flex;
+	gap: 3px;
+	margin-bottom: 3px;
+}
+
+.dash-home-config-mapa-celula,
+.dash-home-config-mapa-sobra {
+	flex-basis: 0;
+	min-width: 0;
+	padding: 4px 6px;
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.dash-home-config-mapa-celula {
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+}
+
+/* O quadrante que está sendo editado, para ela se localizar no mapa. */
+.dash-home-config-mapa-celula.is-editando {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+/* Espaço que sobra na linha: tracejado, porque é ausência e não um bloco de verdade. */
+.dash-home-config-mapa-sobra {
+	border: 1px dashed var(--background-modifier-border);
+	color: var(--text-faint);
+	font-style: italic;
 }
 
 /* Editor do quadrante de conteúdo livre */

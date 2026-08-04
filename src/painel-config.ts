@@ -268,9 +268,9 @@ export class PainelConfigDashHome extends PluginSettingTab {
 		new Setting(el)
 			.setName("Grade")
 			.setDesc(
-				"A base do layout. Cada quadrante escolhe quantos ficam lado a lado — e as opções " +
-					"disponíveis são as divisões exatas deste número. Com 6, dá para ter linhas de " +
-					"1, 2, 3 ou 6; com 4, linhas de 1, 2 ou 4.",
+				"A base do layout: em quantas colunas a largura é dividida. Cada quadrante escolhe " +
+					"quantas dessas colunas ocupa. Com 6, dá para misturar tamanhos na mesma linha " +
+					"(1 + 3 + 2, por exemplo).",
 			)
 			.addSlider((slider) =>
 				slider
@@ -676,79 +676,82 @@ export class PainelConfigDashHome extends PluginSettingTab {
 	private desenharLargura(el: HTMLElement, dashboard: Dashboard, quadrante: Quadrante): void {
 		if (dashboard.colunas <= 1) return;
 
-		// ── Por que a pergunta é "quantos cabem na linha", e não "quantas colunas ocupa" ──────
+		// ── Duas versões erradas antes desta ─────────────────────────────────────────────────
 		//
-		// A versão anterior perguntava em colunas da grade, e isso obrigava a usuária a fazer a
-		// conversão de cabeça: para ter 3 quadrantes numa linha de uma grade de 6, ela teria que
-		// deduzir "2 colunas cada". Ela configurou "2 colunas" numa grade de 3 esperando dois por
-		// linha; 2+2=4 não cabe em 3, o segundo caiu para a linha de baixo e o terceiro subiu para
-		// o buraco — resultado: três em cima, que é o oposto do pedido.
+		// 1. "Quantas colunas ocupa", sem feedback: obrigava a usuária a fazer a conta de cabeça,
+		//    e escolher um valor que não divide a grade embaralhava as linhas silenciosamente.
+		// 2. "Quantos quadrantes lado a lado": consertava a conta, mas ASSUMIA que todos os
+		//    quadrantes da linha têm o mesmo tamanho. Numa grade de 6 ficava impossível montar
+		//    1+3+2 — exatamente o tipo de linha que a grade de 6 existe para permitir.
 		//
-		// Agora ela escolhe o resultado ("3 nesta linha") e nós calculamos a fatia. Só oferecemos
-		// as divisões EXATAS da grade, então nunca sobra buraco para outro quadrante preencher.
-		const divisores: number[] = [];
-		for (let n = 1; n <= dashboard.colunas; n++) {
-			if (dashboard.colunas % n === 0) divisores.push(n);
-		}
-
-		/** Quantos quadrantes deste tamanho cabem numa linha. */
-		const porLinha = (largura: number | "cheio" | undefined): number => {
-			if (largura === "cheio") return 1;
-			return Math.round(dashboard.colunas / (largura ?? 1));
-		};
+		// A pergunta certa é a da versão 1 (é o quadrante que decide o próprio tamanho, não a
+		// linha), mas com o RESULTADO à mostra: quanto da largura isso representa e como a linha
+		// está sendo montada. A usuária escolhe direto, sem calcular e sem adivinhar.
+		const total = dashboard.colunas;
+		const atual = quadrante.largura === "cheio" ? total : (quadrante.largura ?? 1);
 
 		new Setting(el)
-			.setName("Quadrantes nesta linha")
-			.setDesc("Quantos ficam lado a lado. Os vizinhos precisam do mesmo valor para a linha fechar.")
+			.setName("Largura do quadrante")
+			.setDesc(`Quantas das ${total} colunas da grade este quadrante ocupa.`)
 			.addDropdown((drop) => {
-				for (const n of divisores) {
-					drop.addOption(String(n), n === 1 ? "1 (linha inteira)" : `${n} lado a lado`);
+				for (let n = 1; n <= total; n++) {
+					// A fração ajuda a enxergar o tamanho sem contar colunas: "3 de 6 (metade)".
+					const rotulo =
+						n === total
+							? `${n} de ${total} (linha inteira)`
+							: `${n} de ${total}${fracaoLegivel(n, total)}`;
+					drop.addOption(String(n), rotulo);
 				}
-				drop.setValue(String(porLinha(quadrante.largura)));
+				drop.setValue(String(atual));
 				drop.onChange(async (valor) => {
-					const quantos = Number(valor);
-					// 1 por linha é "cheio"; o resto vira a fatia correspondente da grade.
-					quadrante.largura = limitarLarguraQuadrante(
-						quantos <= 1 ? "cheio" : dashboard.colunas / quantos,
-						dashboard.colunas,
-					);
+					quadrante.largura = limitarLarguraQuadrante(Number(valor), total);
 					await this.aplicar();
 				});
 			});
 
-		// Aviso quando a linha não fecha. É a única forma de a usuária descobrir o problema sem
-		// ter que inferi-lo do resultado visual — foi assim que o bug apareceu para ela.
-		const aviso = this.conferirLinhas(dashboard);
-		if (aviso) {
-			el.createDiv({ cls: "dash-home-config-aviso", text: aviso });
-		}
+		// O mapa das linhas: mostra como os quadrantes estão se agrupando de fato, incluindo o
+		// espaço que sobra. É o que transforma "por que ficou assim?" em algo visível.
+		this.desenharMapaDeLinhas(el, dashboard, quadrante);
 	}
 
 	/**
-	 * Verifica se os quadrantes fecham linhas certinhas. Devolve um aviso legível, ou null se
-	 * estiver tudo certo.
+	 * Desenha as linhas do dashboard como faixas proporcionais, destacando o quadrante em edição.
 	 *
-	 * O CSS Grid preenche buracos com o próximo item que couber, então uma linha que não fecha não
-	 * "sobra vazia": ela puxa um quadrante da linha seguinte, e o layout sai diferente do esperado
-	 * sem nenhuma pista do motivo.
+	 * O CSS Grid preenche buracos com o próximo item que couber, então uma linha que não fecha
+	 * não fica visivelmente "pela metade": ela puxa um quadrante da linha seguinte. Sem este mapa,
+	 * a usuária só descobre o resultado depois de salvar e olhar a nota — foi assim que ela
+	 * encontrou o bug de "2 em cima, 3 embaixo" virando "3 em cima".
 	 */
-	private conferirLinhas(dashboard: Dashboard): string | null {
+	private desenharMapaDeLinhas(el: HTMLElement, dashboard: Dashboard, emEdicao: Quadrante): void {
 		const total = dashboard.colunas;
-		let usado = 0;
+		const linhas = agruparEmLinhas(dashboard.quadrantes, total);
 
-		for (const quad of dashboard.quadrantes) {
-			const fatia = quad.largura === "cheio" ? total : (quad.largura ?? 1);
-			if (usado > 0 && usado + fatia > total) {
-				// Este não cabe no que resta: o grid vai empurrá-lo e puxar outro para o buraco.
-				return `As linhas não estão fechando: sobram ${total - usado} de ${total} colunas antes de "${
-					quad.titulo || "sem título"
-				}". Ajuste "Quadrantes nesta linha" ou o número de colunas da grade.`;
+		const mapa = el.createDiv({ cls: "dash-home-config-mapa" });
+		mapa.createDiv({ cls: "dash-home-config-mapa-titulo", text: "Como as linhas ficam:" });
+
+		for (const linha of linhas) {
+			const faixa = mapa.createDiv({ cls: "dash-home-config-mapa-linha" });
+			let ocupado = 0;
+
+			for (const item of linha) {
+				ocupado += item.fatia;
+				const celula = faixa.createDiv({ cls: "dash-home-config-mapa-celula" });
+				celula.style.setProperty("flex-grow", String(item.fatia));
+				celula.toggleClass("is-editando", item.quadrante === emEdicao);
+				celula.setText(item.quadrante.titulo || "sem título");
+				celula.setAttribute("title", `${item.quadrante.titulo || "sem título"} — ${item.fatia} de ${total}`);
 			}
-			usado = (usado + fatia) % total;
-		}
 
-		return null;
+			// A sobra é informação, não erro: a última linha quase sempre está incompleta porque
+			// o dashboard ainda está sendo montado.
+			if (ocupado < total) {
+				const sobra = faixa.createDiv({ cls: "dash-home-config-mapa-sobra" });
+				sobra.style.setProperty("flex-grow", String(total - ocupado));
+				sobra.setText(`vazio (${total - ocupado})`);
+			}
+		}
 	}
+
 
 	/**
 	 * A cor do quadrante: swatches clicáveis em vez de dropdown.
@@ -1119,6 +1122,66 @@ export class PainelConfigDashHome extends PluginSettingTab {
 
 function semPrefixo(id: string): string {
 	return id.startsWith("lucide-") ? id.slice("lucide-".length) : id;
+}
+
+/**
+ * " (metade)", " (um terço)"… para as frações que têm nome. Ajuda a enxergar o tamanho sem
+ * precisar contar colunas. Devolve "" quando a fração não é redonda — inventar nome para 5/6
+ * atrapalharia mais do que ajuda.
+ */
+function fracaoLegivel(parte: number, total: number): string {
+	if (parte * 2 === total) return " (metade)";
+	if (parte * 3 === total) return " (um terço)";
+	if (parte * 4 === total) return " (um quarto)";
+	if (parte * 6 === total) return " (um sexto)";
+	if (parte * 3 === total * 2) return " (dois terços)";
+	if (parte * 4 === total * 3) return " (três quartos)";
+	return "";
+}
+
+interface ItemDaLinha {
+	quadrante: Quadrante;
+	/** Quantas colunas da grade este quadrante ocupa. */
+	fatia: number;
+}
+
+/**
+ * Agrupa os quadrantes em linhas do jeito que o CSS Grid faz: preenche a linha até não caber
+ * mais, e o que não cabe começa a próxima.
+ *
+ * Simplificação assumida: o grid real pode puxar um item PEQUENO de mais adiante para tapar um
+ * buraco (`grid-auto-flow` denso não está ligado, mas o algoritmo padrão ainda avança). Aqui
+ * mantemos a ordem, que é o que a usuária espera ver — e o mapa serve justamente para mostrar
+ * quando sobra espaço, que é a causa desse comportamento.
+ */
+function agruparEmLinhas(quadrantes: Quadrante[], total: number): ItemDaLinha[][] {
+	const linhas: ItemDaLinha[][] = [];
+	let atual: ItemDaLinha[] = [];
+	let usado = 0;
+
+	for (const quadrante of quadrantes) {
+		const bruta = quadrante.largura === "cheio" ? total : (quadrante.largura ?? 1);
+		// Nunca deixa uma fatia maior que a grade virar uma linha impossível de desenhar.
+		const fatia = Math.min(total, Math.max(1, bruta));
+
+		if (usado + fatia > total && atual.length > 0) {
+			linhas.push(atual);
+			atual = [];
+			usado = 0;
+		}
+
+		atual.push({ quadrante, fatia });
+		usado += fatia;
+
+		if (usado >= total) {
+			linhas.push(atual);
+			atual = [];
+			usado = 0;
+		}
+	}
+
+	if (atual.length > 0) linhas.push(atual);
+	return linhas;
 }
 
 /**
