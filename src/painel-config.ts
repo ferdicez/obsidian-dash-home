@@ -482,13 +482,20 @@ export class PainelConfigDashHome extends PluginSettingTab {
 		indice: number,
 	): void {
 		const ehMarkdown = quadrante.conteudo === "markdown";
+		const ehSeparador = quadrante.conteudo === "separador";
 
 		const secao = criarAcordeao(el, {
 			chave: `${quadrante.id}:quadrante`,
-			titulo: quadrante.titulo || "(sem título)",
-			resumo: ehMarkdown
-				? "conteúdo livre"
-				: `${quadrante.botoes.length} ${quadrante.botoes.length === 1 ? "botão" : "botões"}`,
+			// Um separador raramente tem título; mostrar o texto dele (ou o tipo) evita uma lista
+			// de "(sem título)" indistinguíveis.
+			titulo:
+				quadrante.titulo ||
+				(ehSeparador ? quadrante.separador?.texto?.trim() || "Separador" : "(sem título)"),
+			resumo: ehSeparador
+				? "separador"
+				: ehMarkdown
+					? "conteúdo livre"
+					: `${quadrante.botoes.length} ${quadrante.botoes.length === 1 ? "botão" : "botões"}`,
 			aninhado: true,
 		});
 
@@ -522,19 +529,26 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			secaoConteudo.sePreenchido((corpoConteudo) => {
 				new Setting(corpoConteudo)
 					.setName("Tipo de conteúdo")
-					.setDesc("Botões de navegação, ou um espaço livre para escrever o que quiser.")
+					.setDesc("Botões, um espaço livre para escrever, ou um separador entre linhas.")
 					.addDropdown((drop) => {
 						drop.addOption("botoes", "Botões");
 						drop.addOption("markdown", "Conteúdo livre");
-						drop.setValue(ehMarkdown ? "markdown" : "botoes");
+						drop.addOption("separador", "Separador / espaço");
+						drop.setValue(quadrante.conteudo ?? "botoes");
 						drop.onChange(async (valor) => {
-							// Os botões NÃO são apagados ao trocar para markdown (nem o contrário):
-							// voltar atrás tem que devolver o que existia. O que não é do tipo atual
+							// Os botões NÃO são apagados ao trocar de tipo (nem o markdown): voltar
+							// atrás tem que devolver o que existia. O que não é do tipo atual
 							// simplesmente não é renderizado.
-							quadrante.conteudo = valor === "markdown" ? "markdown" : undefined;
+							quadrante.conteudo =
+								valor === "botoes" ? undefined : (valor as "markdown" | "separador");
 							await this.aplicar();
 						});
 					});
+
+				if (quadrante.conteudo === "separador") {
+					this.desenharSeparador(corpoConteudo, quadrante);
+					return;
+				}
 
 				if (ehMarkdown) {
 					this.desenharEditorMarkdown(corpoConteudo, quadrante);
@@ -597,6 +611,56 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				this.desenharSeletorDeCor(corpoAparencia, quadrante);
 				this.desenharEstilo(corpoAparencia, quadrante);
 			});
+		});
+	}
+
+	/**
+	 * Os controles do separador — a "linha divisória entre uma linha e outra" que a usuária pediu,
+	 * também servindo como respiro (só espaço) ou título de seção (só texto).
+	 */
+	private desenharSeparador(el: HTMLElement, quadrante: Quadrante): void {
+		const cfg = (quadrante.separador ??= {});
+
+		new Setting(el)
+			.setName("Texto")
+			.setDesc("Opcional. Vira um título de seção ao lado da linha.")
+			.addText((texto) =>
+				texto
+					.setPlaceholder("Ex.: Trabalho")
+					.setValue(cfg.texto ?? "")
+					.onChange((valor) => {
+						cfg.texto = valor;
+						this.salvarDigitacao();
+					}),
+			);
+
+		new Setting(el)
+			.setName("Linha divisória")
+			.setDesc("Desligue para ter só um espaço em branco entre as linhas.")
+			.addToggle((toggle) =>
+				toggle.setValue(cfg.linha !== false).onChange(async (valor) => {
+					cfg.linha = valor;
+					await this.aplicar();
+				}),
+			);
+
+		new Setting(el)
+			.setName("Espaço")
+			.setDesc("Respiro acima e abaixo, em pixels.")
+			.addSlider((slider) =>
+				slider
+					.setLimits(0, 48, 2)
+					.setValue(cfg.espaco ?? 8)
+					.setDynamicTooltip()
+					.onChange(async (valor) => {
+						cfg.espaco = valor;
+						await this.aplicar();
+					}),
+			);
+
+		el.createDiv({
+			cls: "dash-home-config-vazio",
+			text: "O separador ocupa sempre a linha inteira.",
 		});
 	}
 
@@ -675,6 +739,13 @@ export class PainelConfigDashHome extends PluginSettingTab {
 	 */
 	private desenharLargura(el: HTMLElement, dashboard: Dashboard, quadrante: Quadrante): void {
 		if (dashboard.colunas <= 1) return;
+
+		// O separador é sempre linha inteira; oferecer largura aqui seria um controle sem efeito.
+		// O mapa continua sendo desenhado, porque ele ajuda a posicionar o separador entre linhas.
+		if (quadrante.conteudo === "separador") {
+			this.desenharMapaDeLinhas(el, dashboard, quadrante);
+			return;
+		}
 
 		// ── Duas versões erradas antes desta ─────────────────────────────────────────────────
 		//
@@ -1160,7 +1231,11 @@ function agruparEmLinhas(quadrantes: Quadrante[], total: number): ItemDaLinha[][
 	let usado = 0;
 
 	for (const quadrante of quadrantes) {
-		const bruta = quadrante.largura === "cheio" ? total : (quadrante.largura ?? 1);
+		// O separador ignora `largura` e sempre toma a linha inteira — é o que o render faz.
+		const bruta =
+			quadrante.conteudo === "separador" || quadrante.largura === "cheio"
+				? total
+				: (quadrante.largura ?? 1);
 		// Nunca deixa uma fatia maior que a grade virar uma linha impossível de desenhar.
 		const fatia = Math.min(total, Math.max(1, bruta));
 

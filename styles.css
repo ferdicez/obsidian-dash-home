@@ -6,7 +6,9 @@
 
 .dash-home-dashboard {
 	--dash-home-cor: var(--interactive-accent);
-	margin: 0.5em 0;
+	/* Respiro maior no topo: o dashboard costuma vir logo abaixo de um título, e 0.5em deixava
+	   o primeiro quadrante colado nele. */
+	margin: 1.2em 0 0.5em;
 	/* Declarado no próprio dashboard (não num ancestral do Obsidian) para a media query abaixo
 	   medir a largura real disponível — vale igual na nota, no embed e na barra lateral. */
 	container-type: inline-size;
@@ -18,17 +20,14 @@
 	gap: 1em;
 }
 
-/* Largura intermediária: em vez de manter a grade fixa, as colunas passam a ter uma largura
-   mínima e o grid decide quantas cabem. Assim um dashboard de 6 colunas degrada suavemente
-   (6 → 4 → 2) em vez de saltar direto para 1.
-
-   `auto-fit` com `minmax` em vez de dividir --dash-home-colunas por 2: `repeat()` não aceita
-   contagem fracionária de forma confiável, e o resultado dependeria do valor ser par. */
-@container (max-width: 1100px) {
-	.dash-home-grid {
-		grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-	}
-}
+/* NÃO reintroduzir um `auto-fit` intermediário aqui.
+   Havia um `@container (max-width: 1100px)` com `repeat(auto-fit, minmax(180px, 1fr))`, pensado
+   para degradar suavemente. Ele DESCARTA o número de colunas escolhido e deixa o grid decidir
+   quantas cabem — então as fatias dos quadrantes passam a se referir a outra grade. Numa grade
+   de 6 abaixo de 1100px o auto-fit resolvia para 4 colunas, e um quadrante de "5 de 6" virava
+   "3 de 4": o layout saía diferente do configurado, e diferente do mapa do painel.
+   O `minmax(0, 1fr)` do template já permite as colunas encolherem; abaixo de 700px tudo vira
+   uma coluna só, que é a degradação que realmente importa. */
 
 /* Tela estreita (painel lateral, celular): o grid vira uma coluna só. Mede o container, não a
    janela, então vale também com o dashboard numa barra lateral estreita de tela grande. */
@@ -105,6 +104,46 @@
 	border-radius: var(--dash-home-radius, var(--radius-m));
 	padding: var(--dash-home-padding, 14px);
 	min-width: 0;
+}
+
+/* ── Separador ────────────────────────────────────────────────────────────────────────────
+   Um respiro entre linhas: linha divisória, título de seção, ou só espaço em branco. Sempre
+   ocupa a linha inteira (`grid-column` vem do render). */
+.dash-home-separador {
+	display: flex;
+	align-items: center;
+	gap: 0.7em;
+	margin: var(--dash-home-separador-espaco, 8px) 0;
+	min-height: 1px;
+}
+
+/* A linha é ::after quando não há texto (ocupa tudo) e ::before + ::after quando há (o texto
+   fica no meio). Assim o mesmo elemento serve aos dois casos sem markup extra. */
+.dash-home-separador.is-com-linha::after {
+	content: "";
+	flex: 1;
+	height: 1px;
+	background: var(--background-modifier-border);
+}
+
+.dash-home-separador.is-com-linha.is-com-texto::before {
+	content: "";
+	/* Um traço curto antes do texto, para o título não colar na margem. */
+	flex: 0 0 1.5em;
+	height: 1px;
+	background: var(--background-modifier-border);
+}
+
+.dash-home-separador-texto {
+	flex-shrink: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-medium);
+}
+
+/* Só texto, sem linha: alinha à esquerda como um título de seção comum. */
+.dash-home-separador:not(.is-com-linha) .dash-home-separador-texto {
+	color: var(--text-normal);
 }
 
 .dash-home-quadrante-titulo {

@@ -92,6 +92,12 @@ function renderizarQuadrante(
 	dados: DadosDashHome,
 	opcoes: OpcoesRender,
 ): void {
+	// O separador não é um card: sai antes de qualquer estilo de quadrante ser aplicado.
+	if (quadrante.conteudo === "separador") {
+		renderizarSeparador(grid, quadrante);
+		return;
+	}
+
 	const card = grid.createDiv({ cls: "dash-home-quadrante" });
 	const estilo = resolverEstilo(dados.estiloGlobal, quadrante.estilo);
 
@@ -135,6 +141,31 @@ function renderizarQuadrante(
 	for (const botao of quadrante.botoes) {
 		renderizarBotao(lista, botao, opcoes);
 	}
+}
+
+/**
+ * Um separador entre linhas: linha divisória, título de seção, ou só espaço em branco.
+ *
+ * Sempre ocupa a linha inteira (`1 / -1`) — um separador que dividisse meia largura não separaria
+ * nada, e ainda deixaria o grid puxar o próximo quadrante para o lado dele. Por isso ele ignora o
+ * campo `largura` em vez de respeitá-lo.
+ */
+function renderizarSeparador(grid: HTMLElement, quadrante: Quadrante): void {
+	const cfg = quadrante.separador ?? {};
+	const el = grid.createDiv({ cls: "dash-home-separador" });
+	el.style.setProperty("grid-column", "1 / -1");
+
+	const espaco = typeof cfg.espaco === "number" ? cfg.espaco : 8;
+	el.style.setProperty("--dash-home-separador-espaco", `${espaco}px`);
+
+	const texto = cfg.texto?.trim() ?? "";
+	// `linha` só é falso se explicitamente desligado: um separador recém-criado tem que aparecer.
+	const comLinha = cfg.linha !== false;
+
+	el.toggleClass("is-com-linha", comLinha);
+	el.toggleClass("is-com-texto", texto.length > 0);
+
+	if (texto) el.createSpan({ cls: "dash-home-separador-texto", text: texto });
 }
 
 /**

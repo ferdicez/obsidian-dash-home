@@ -59,8 +59,21 @@ export interface Quadrante {
 	/**
 	 * O que o quadrante mostra. `undefined` = "botoes" (o padrão, e o que todo quadrante
 	 * existente antes desta funcionalidade era).
+	 *
+	 * "separador" é um caso à parte: não é um card, e sim um respiro entre linhas — uma linha
+	 * divisória, um título de seção, ou só espaço em branco. Ocupa sempre a linha inteira, porque
+	 * um separador que dividisse só metade da largura não separaria nada.
 	 */
-	conteudo?: "botoes" | "markdown";
+	conteudo?: "botoes" | "markdown" | "separador";
+	/** Aparência do separador, quando `conteudo === "separador"`. */
+	separador?: {
+		/** Texto opcional ao lado da linha (ou no lugar dela, se `linha` for false). */
+		texto?: string;
+		/** Desenhar a linha divisória. */
+		linha?: boolean;
+		/** Espaço acima e abaixo, em px. */
+		espaco?: number;
+	};
 	/**
 	 * O markdown do quadrante, quando `conteudo === "markdown"`. Renderizado pelo Obsidian, então
 	 * aceita tudo que uma nota aceita: texto, `![[embed]]`, blocos de Base, Dataview, callouts.
@@ -222,6 +235,11 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 		for (const quad of dash.quadrantes) {
 			if (quad.estilo && typeof quad.estilo !== "object") delete quad.estilo;
 			quad.largura = limitarLarguraQuadrante(quad.largura, dash.colunas);
+			if (quad.separador && typeof quad.separador !== "object") delete quad.separador;
+			if (quad.separador && typeof quad.separador.espaco === "number") {
+				// Um espaço absurdo empurraria o resto do dashboard para fora da tela.
+				quad.separador.espaco = Math.min(200, Math.max(0, Math.round(quad.separador.espaco)));
+			}
 			if (!Array.isArray(quad.botoes)) quad.botoes = [];
 			// Um tipo desconhecido viraria um botão que não faz nada ao clicar; "nota" é o
 			// fallback seguro (no pior caso avisa que a nota não existe).

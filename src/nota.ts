@@ -36,6 +36,17 @@ export function gerarBloco(dashboard: Dashboard): string {
 		if (quadrante.cor) linhas.push(`    cor: ${quadrante.cor}`);
 		if (quadrante.largura) linhas.push(`    largura: ${quadrante.largura}`);
 
+		if (quadrante.conteudo === "separador") {
+			linhas.push(`    conteudo: separador`);
+			const sep = quadrante.separador ?? {};
+			if (sep.texto) linhas.push(`    sepTexto: ${aspas(sep.texto)}`);
+			// Só grava quando é `false`: `true` é o padrão e não precisa ocupar linha.
+			if (sep.linha === false) linhas.push(`    sepLinha: false`);
+			// `typeof` e não truthiness: espaço 0 é uma escolha válida (colar as linhas).
+			if (typeof sep.espaco === "number") linhas.push(`    sepEspaco: ${sep.espaco}`);
+			continue;
+		}
+
 		if (quadrante.conteudo === "markdown") {
 			linhas.push(`    conteudo: markdown`);
 			// Em uma linha só, com escapes: o markdown pode ter quebras de linha, aspas e — o
