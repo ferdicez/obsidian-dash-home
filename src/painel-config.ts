@@ -266,10 +266,11 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			);
 
 		new Setting(el)
-			.setName("Colunas")
+			.setName("Grade")
 			.setDesc(
-				"A grade de base. Cada quadrante escolhe quantas colunas ocupa — para linhas " +
-					"desiguais (2 em cima, 3 embaixo), use 6 colunas aqui.",
+				"A base do layout. Cada quadrante escolhe quantos ficam lado a lado — e as opções " +
+					"disponíveis são as divisões exatas deste número. Com 6, dá para ter linhas de " +
+					"1, 2, 3 ou 6; com 4, linhas de 1, 2 ou 4.",
 			)
 			.addSlider((slider) =>
 				slider
@@ -675,25 +676,78 @@ export class PainelConfigDashHome extends PluginSettingTab {
 	private desenharLargura(el: HTMLElement, dashboard: Dashboard, quadrante: Quadrante): void {
 		if (dashboard.colunas <= 1) return;
 
+		// ── Por que a pergunta é "quantos cabem na linha", e não "quantas colunas ocupa" ──────
+		//
+		// A versão anterior perguntava em colunas da grade, e isso obrigava a usuária a fazer a
+		// conversão de cabeça: para ter 3 quadrantes numa linha de uma grade de 6, ela teria que
+		// deduzir "2 colunas cada". Ela configurou "2 colunas" numa grade de 3 esperando dois por
+		// linha; 2+2=4 não cabe em 3, o segundo caiu para a linha de baixo e o terceiro subiu para
+		// o buraco — resultado: três em cima, que é o oposto do pedido.
+		//
+		// Agora ela escolhe o resultado ("3 nesta linha") e nós calculamos a fatia. Só oferecemos
+		// as divisões EXATAS da grade, então nunca sobra buraco para outro quadrante preencher.
+		const divisores: number[] = [];
+		for (let n = 1; n <= dashboard.colunas; n++) {
+			if (dashboard.colunas % n === 0) divisores.push(n);
+		}
+
+		/** Quantos quadrantes deste tamanho cabem numa linha. */
+		const porLinha = (largura: number | "cheio" | undefined): number => {
+			if (largura === "cheio") return 1;
+			return Math.round(dashboard.colunas / (largura ?? 1));
+		};
+
 		new Setting(el)
-			.setName("Largura")
-			.setDesc("Quantas colunas este quadrante ocupa. Use para montar linhas desiguais.")
+			.setName("Quadrantes nesta linha")
+			.setDesc("Quantos ficam lado a lado. Os vizinhos precisam do mesmo valor para a linha fechar.")
 			.addDropdown((drop) => {
-				// Só até colunas-1: ocupar todas já é "cheio", e ter dois caminhos para o mesmo
-				// resultado só confunde (ver `limitarLarguraQuadrante`).
-				for (let n = 1; n < dashboard.colunas; n++) {
-					drop.addOption(String(n), n === 1 ? "1 coluna" : `${n} colunas`);
+				for (const n of divisores) {
+					drop.addOption(String(n), n === 1 ? "1 (linha inteira)" : `${n} lado a lado`);
 				}
-				drop.addOption("cheio", "Linha inteira");
-				drop.setValue(quadrante.largura === "cheio" ? "cheio" : String(quadrante.largura ?? 1));
+				drop.setValue(String(porLinha(quadrante.largura)));
 				drop.onChange(async (valor) => {
+					const quantos = Number(valor);
+					// 1 por linha é "cheio"; o resto vira a fatia correspondente da grade.
 					quadrante.largura = limitarLarguraQuadrante(
-						valor === "cheio" ? "cheio" : Number(valor),
+						quantos <= 1 ? "cheio" : dashboard.colunas / quantos,
 						dashboard.colunas,
 					);
 					await this.aplicar();
 				});
 			});
+
+		// Aviso quando a linha não fecha. É a única forma de a usuária descobrir o problema sem
+		// ter que inferi-lo do resultado visual — foi assim que o bug apareceu para ela.
+		const aviso = this.conferirLinhas(dashboard);
+		if (aviso) {
+			el.createDiv({ cls: "dash-home-config-aviso", text: aviso });
+		}
+	}
+
+	/**
+	 * Verifica se os quadrantes fecham linhas certinhas. Devolve um aviso legível, ou null se
+	 * estiver tudo certo.
+	 *
+	 * O CSS Grid preenche buracos com o próximo item que couber, então uma linha que não fecha não
+	 * "sobra vazia": ela puxa um quadrante da linha seguinte, e o layout sai diferente do esperado
+	 * sem nenhuma pista do motivo.
+	 */
+	private conferirLinhas(dashboard: Dashboard): string | null {
+		const total = dashboard.colunas;
+		let usado = 0;
+
+		for (const quad of dashboard.quadrantes) {
+			const fatia = quad.largura === "cheio" ? total : (quad.largura ?? 1);
+			if (usado > 0 && usado + fatia > total) {
+				// Este não cabe no que resta: o grid vai empurrá-lo e puxar outro para o buraco.
+				return `As linhas não estão fechando: sobram ${total - usado} de ${total} colunas antes de "${
+					quad.titulo || "sem título"
+				}". Ajuste "Quadrantes nesta linha" ou o número de colunas da grade.`;
+			}
+			usado = (usado + fatia) % total;
+		}
+
+		return null;
 	}
 
 	/**

@@ -56,37 +56,45 @@
    dá para simplesmente pedir mais largura: o bloco cresce para os dois lados com margem
    negativa simétrica. `--dash-home-largura` limita o quanto ele cresce (sem ela, vai ao
    máximo disponível). O max-width nunca passa da largura da viewport do container. */
-/* A tentativa anterior (`margin-left: 50%` + `translateX(-50%)`) estava ERRADA e cortava o
-   dashboard para fora da tela: os 50% são medidos sobre o container PAI, não sobre a área
-   disponível, então em container estreito o bloco saía deslocado à esquerda. E o `100cqw`
-   referenciava o próprio dashboard, que declara `container-type` — media a si mesmo.
+/* ── Largura ──────────────────────────────────────────────────────────────────────────────
 
-   A forma correta no Obsidian é soltar a trava de largura de leitura no ancestral que a impõe,
-   em vez de empurrar o bloco para fora dela. O bloco então cresce naturalmente, sem deslocamento.
+   Duas tentativas anteriores falharam, e por motivos diferentes:
 
-   `:has()` é o que permite mirar só as notas que contêm um dashboard largo — sem ele, teríamos
-   de alargar todas as notas, o que mudaria o vault inteiro. */
-.markdown-preview-sizer:has(> div > .dash-home-dashboard.is-largura-total),
-.markdown-preview-sizer:has(> .dash-home-dashboard.is-largura-total),
-.cm-sizer:has(.dash-home-dashboard.is-largura-total) {
+   1. `margin-left: 50%` + `translateX(-50%)`: as duas porcentagens têm bases distintas (o pai e
+      o próprio elemento), então o bloco saía deslocado e cortado à esquerda.
+   2. `:has()` com combinador de filho (`> div >`): o dashboard NÃO é filho direto do sizer. O
+      Obsidian embrulha um code block em `.el-pre > .block-language-dash-home > (nosso div)`, e
+      a profundidade varia entre leitura e edição. Os seletores não casavam, a trava continuava
+      valendo e a largura "não fazia nada" — que é exatamente o sintoma relatado.
+
+   Agora o `:has()` usa descendente (sem `>`), que cobre qualquer profundidade de wrapper, e a
+   trava é solta em TODOS os ancestrais conhecidos que a impõem. Continua mirando só notas que
+   contêm um dashboard largo: notas comuns mantêm a largura de leitura normal. */
+
+.markdown-preview-sizer:has(.dash-home-dashboard.is-largura-total),
+.markdown-preview-view:has(.dash-home-dashboard.is-largura-total) .markdown-preview-sizer,
+.markdown-source-view:has(.dash-home-dashboard.is-largura-total) .cm-sizer,
+.markdown-source-view:has(.dash-home-dashboard.is-largura-total) .cm-contentContainer,
+.markdown-source-view:has(.dash-home-dashboard.is-largura-total) .cm-content,
+.markdown-source-view:has(.dash-home-dashboard.is-largura-total) .cm-line {
+	max-width: none !important;
+}
+
+/* Os wrappers que o Obsidian põe entre o sizer e o nosso div têm largura própria; sem soltá-los
+   o dashboard cresceria dentro de uma caixa que continua estreita. */
+.block-language-dash-home:has(.dash-home-dashboard.is-largura-total),
+.el-pre:has(.dash-home-dashboard.is-largura-total) {
 	max-width: none !important;
 	width: 100% !important;
 }
 
-/* O bloco em si: ocupa o que houver, ou a largura fixa escolhida — e nunca mais que o disponível,
-   para a largura fixa não criar rolagem horizontal em tela pequena. */
+/* O bloco em si. `--dash-home-largura` é a largura fixa escolhida; sem ela, ocupa o disponível.
+   `max-width: 100%` impede que uma largura fixa maior que a janela estoure a tela. */
 .dash-home-dashboard.is-largura-total {
 	width: var(--dash-home-largura, 100%);
 	max-width: 100%;
 	margin-left: 0;
 	margin-right: 0;
-}
-
-/* Alguns temas (Minimal, entre outros) impõem a largura por outro caminho. Soltar também o
-   container de leitura cobre esses casos sem afetar notas que não têm dashboard largo. */
-.markdown-preview-view:has(.dash-home-dashboard.is-largura-total) .markdown-preview-sizer,
-.markdown-source-view:has(.dash-home-dashboard.is-largura-total) .cm-contentContainer {
-	max-width: none !important;
 }
 
 .dash-home-quadrante {
@@ -436,6 +444,19 @@
 .dash-home-acordeao-corpo > .setting-item:first-child {
 	border-top: none;
 	padding-top: 0;
+}
+
+/* Aviso de linha que não fecha — o grid preenche buracos sozinho, então sem este texto a
+   usuária só descobre o problema pelo resultado visual, sem pista da causa. */
+.dash-home-config-aviso {
+	margin: 0.4em 0;
+	padding: 0.5em 0.7em;
+	border-left: 3px solid var(--color-orange);
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-hover);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.4;
 }
 
 /* Editor do quadrante de conteúdo livre */
