@@ -104,6 +104,10 @@ export function ehIgual(atual: unknown, valorConfigurado: string, tipo: TipoValo
  * o lado: se o atual já é o primeiro valor, vai para o segundo; em qualquer outro caso (inclusive
  * propriedade inexistente) vai para o primeiro — assim o primeiro clique num campo em branco tem
  * efeito visível, em vez de parecer que o botão não fez nada.
+ *
+ * O "escolher" NÃO aparece aqui de propósito: ele precisa de um modal e de uma espera, o que é
+ * trabalho do `acoes.ts`. De lá ele chega já resolvido, como um "definir" com o valor clicado —
+ * assim este módulo continua puro e síncrono.
  */
 export function valorFinal(mudanca: MudancaPropriedade, atual: unknown): unknown {
 	if (mudanca.operacao === "alternar") {

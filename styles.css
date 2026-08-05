@@ -544,6 +544,27 @@
 	color: var(--text-muted);
 }
 
+/* A lista de opções do "escolher": uma por linha, então o textarea precisa de largura real —
+   o padrão do Setting o espreme na coluna da direita e sobram ~15 caracteres por linha. */
+.dash-home-config-opcoes .setting-item-control {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.dash-home-config-opcoes textarea {
+	width: 100%;
+	min-width: 0;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+	resize: vertical;
+}
+
+/* A linha do "puxar do vault" é informativa: o texto pesa mais que o botão. */
+.dash-home-config-opcoes-vault .setting-item-description {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
 /* ── Acordeão ─────────────────────────────────────────────────────────────────────────────
    Portado do painel do My Tasks, a pedido da usuária. Sem moldura: só a linha divisória
    embaixo e o recuo do corpo dão a leitura de hierarquia. */

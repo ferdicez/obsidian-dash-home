@@ -124,6 +124,12 @@ export function gerarBloco(
 					if (mudanca.operacao === "alternar") {
 						linhas.push(`            valor2: ${aspas(mudanca.valor2 ?? "")}`);
 					}
+					// As opções do "escolher" — o bloco tem que descrever a lista que o botão abre,
+					// senão ele aparece só como "operacao: escolher" e não se sabe do quê.
+					if (mudanca.operacao === "escolher" && mudanca.opcoes?.length) {
+						linhas.push(`            opcoes:`);
+						for (const opcao of mudanca.opcoes) linhas.push(`              - ${aspas(opcao)}`);
+					}
 				}
 			}
 

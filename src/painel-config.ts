@@ -8,10 +8,13 @@ import {
 	criarQuadrante,
 	dashboardAtivo,
 	dashboardQueUsaNota,
+	duplicarBotao,
+	duplicarQuadrante,
 	ehHex,
 	limitarColunas,
 	limitarLargura,
 	limitarLarguraQuadrante,
+	limparOpcoes,
 	mover,
 	removerDashboard,
 	type Botao,
@@ -46,6 +49,7 @@ import {
 	ModalEscolherNota,
 	ModalEscolherPasta,
 	ModalEscolherPropriedade,
+	valoresDaPropriedade,
 } from "./seletores";
 
 /**
@@ -531,6 +535,15 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			mover(dashboard.quadrantes, indice, 1);
 			await this.aplicar();
 		});
+		this.botaoIcone(acoes, "copy", "Duplicar quadrante", true, async () => {
+			const copia = duplicarQuadrante(dashboard, indice);
+			// A cópia nasce aberta, como o quadrante novo: quem duplica vai editar a diferença.
+			if (copia) {
+				abrirAcordeao(`${copia.id}:quadrante`);
+				abrirAcordeao(`${copia.id}:conteudo`);
+			}
+			await this.aplicar();
+		});
 		this.botaoIcone(acoes, "trash-2", "Excluir quadrante", true, async () => {
 			dashboard.quadrantes.splice(indice, 1);
 			await this.aplicar();
@@ -582,12 +595,31 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				quadrante.botoes.forEach((botao, i) => {
 					this.desenharBotao(corpoConteudo, quadrante, botao, i);
 				});
-				new Setting(corpoConteudo).addButton((botao) =>
+				const acoesLista = new Setting(corpoConteudo);
+				acoesLista.addButton((botao) =>
 					botao.setButtonText("+ Novo botão").onClick(async () => {
 						criarBotao(quadrante, "Novo botão");
 						await this.aplicar();
 					}),
 				);
+
+				// Duplicar o último também aqui, e não só na fileira de cada botão: o momento em que
+				// ela sente falta é ao ADICIONAR o próximo, com a mão já neste canto da tela. O
+				// último é o alvo certo porque é o que ela acabou de montar — para copiar outro, o
+				// ícone da própria linha dele continua ali.
+				if (quadrante.botoes.length > 0) {
+					const ultimo = quadrante.botoes[quadrante.botoes.length - 1];
+					acoesLista.addButton((botao) =>
+						botao
+							.setButtonText("Duplicar o último")
+							.setTooltip(`Copia "${ultimo.texto}" com todos os ajustes`)
+							.onClick(async () => {
+								const copia = duplicarBotao(quadrante, quadrante.botoes.length - 1);
+								if (copia) abrirAcordeao(`${copia.id}:estilo`);
+								await this.aplicar();
+							}),
+					);
+				}
 			});
 
 			const secaoIdentidade = criarAcordeao(corpo, {
@@ -1432,6 +1464,18 @@ export class PainelConfigDashHome extends PluginSettingTab {
 		);
 		topo.addExtraButton((b) =>
 			b
+				.setIcon("copy")
+				.setTooltip("Duplicar botão")
+				.onClick(async () => {
+					const copia = duplicarBotao(quadrante, indice);
+					// Abre a cópia já expandida: quem duplica vai editar a diferença em seguida, e
+					// achá-la fechada no meio da lista seria um clique a mais em cima do óbvio.
+					if (copia) abrirAcordeao(`${copia.id}:estilo`);
+					await this.aplicar();
+				}),
+		);
+		topo.addExtraButton((b) =>
+			b
 				.setIcon("trash-2")
 				.setTooltip("Excluir botão")
 				.onClick(async () => {
@@ -1607,12 +1651,15 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			alvo.addDropdown((drop) => {
 				drop.addOption("definir", "Definir como");
 				drop.addOption("alternar", "Alternar entre");
+				drop.addOption("escolher", "Escolher de uma lista");
 				drop.setValue(mudanca.operacao);
 				drop.onChange(async (valor) => {
 					mudanca.operacao = valor as OperacaoPropriedade;
 					// Sair do alternar descarta o segundo valor: mantê-lo escondido faria ele
 					// reaparecer sozinho se ela voltasse a alternar depois.
 					if (mudanca.operacao !== "alternar") delete mudanca.valor2;
+					// `opcoes` NÃO é descartada ao sair do "escolher": montar uma lista de seis
+					// valores é trabalho, e apagá-la porque ela espiou outra operação seria perdê-lo.
 					await this.aplicar();
 				});
 			});
@@ -1667,6 +1714,12 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				return;
 			}
 
+			// "Escolher" não tem valor fixo: tem a LISTA que vai aparecer no clique.
+			if (mudanca.operacao === "escolher") {
+				this.desenharOpcoes(caixa, mudanca);
+				return;
+			}
+
 			// Linha 2: o(s) valor(es). Campos de texto usam `salvarDigitacao`, nunca `aplicar` —
 			// redesenhar o painel a cada tecla tiraria o foco do campo no meio da digitação.
 			const valores = new Setting(caixa)
@@ -1701,6 +1754,78 @@ export class PainelConfigDashHome extends PluginSettingTab {
 		});
 	}
 
+	/**
+	 * A lista de opções que o botão oferece no clique.
+	 *
+	 * Uma por linha, num textarea, e não um campo por opção com botão de adicionar: escrever seis
+	 * valores é uma digitação só, e reordenar é recortar e colar uma linha. Um formulário com seis
+	 * campos e setas de subir/descer seria mais cliques para o mesmo resultado.
+	 */
+	private desenharOpcoes(el: HTMLElement, mudanca: MudancaPropriedade): void {
+		const opcoes = mudanca.opcoes ?? [];
+
+		const lista = new Setting(el)
+			.setClass("dash-home-config-opcoes")
+			.setName("Opções")
+			.setDesc(
+				opcoes.length === 0
+					? "Uma por linha. São elas que aparecem para clicar."
+					: `${opcoes.length} ${opcoes.length === 1 ? "opção" : "opções"}, nesta ordem, ao clicar no botão.`,
+			);
+
+		lista.addTextArea((area) => {
+			area.setPlaceholder("a fazer\nfazendo\nfeito");
+			area.setValue(opcoes.join("\n"));
+			area.inputEl.rows = Math.min(10, Math.max(4, opcoes.length + 1));
+			area.onChange((valor) => {
+				// A limpeza (vazias, repetidas) roda aqui e não só na carga: sem isso uma linha em
+				// branco no meio da digitação já viraria uma opção clicável na miniatura.
+				const limpas = limparOpcoes(valor.split("\n"));
+				if (limpas.length > 0) mudanca.opcoes = limpas;
+				else delete mudanca.opcoes;
+				this.salvarDigitacao();
+			});
+		});
+
+		// Puxar os valores que a propriedade já tem nas notas: montar seis opções à mão quando elas
+		// já existem no vault é trabalho repetido. É ponto de partida, não fonte — o que vale é a
+		// lista acima, que ela edita.
+		const nome = mudanca.nome?.trim();
+		if (nome) {
+			const doVault = valoresDaPropriedade(this.app, nome);
+			const novos = doVault.filter((v) => !opcoes.includes(v));
+
+			new Setting(el)
+				.setClass("dash-home-config-opcoes-vault")
+				.setDesc(
+					doVault.length === 0
+						? `Nenhuma nota usa "${nome}" ainda — digite as opções acima.`
+						: novos.length === 0
+							? `Os ${doVault.length} valores que "${nome}" tem no vault já estão na lista.`
+							: `"${nome}" tem ${doVault.length} ${doVault.length === 1 ? "valor" : "valores"} nas suas notas: ${doVault.slice(0, 6).join(", ")}${doVault.length > 6 ? "…" : ""}`,
+				)
+				.addButton((b) =>
+					b
+						.setButtonText(opcoes.length === 0 ? "Puxar do vault" : `Acrescentar ${novos.length}`)
+						.setTooltip("Preenche a lista com os valores já usados nas suas notas")
+						.setDisabled(novos.length === 0)
+						.onClick(async () => {
+							// Acrescenta ao fim, sem apagar o que ela já escreveu: substituir jogaria
+							// fora a ordem e as opções que ainda não existem em nota nenhuma.
+							mudanca.opcoes = limparOpcoes([...opcoes, ...doVault]);
+							await this.aplicar();
+						}),
+				);
+		}
+
+		if (opcoes.length === 0) {
+			el.createDiv({
+				cls: "dash-home-config-vazio",
+				text: "Sem opções, o botão avisa e não altera nada.",
+			});
+		}
+	}
+
 	/** Um exemplo do formato aceito, por tipo — evita a pergunta "como escrevo uma data aqui?". */
 	private exemploDeValor(tipo: TipoValorPropriedade): string {
 		if (tipo === "numero") return "3 ou 3,5";
@@ -1719,6 +1844,13 @@ export class PainelConfigDashHome extends PluginSettingTab {
 	private explicarMudanca(mudanca: MudancaPropriedade): string {
 		const nome = mudanca.nome || "a propriedade";
 		const primeiro = mudanca.valor.trim() || "(vazio)";
+
+		if (mudanca.operacao === "escolher") {
+			const quantas = mudanca.opcoes?.length ?? 0;
+			return quantas === 0
+				? `Abre uma lista para escolher o valor de "${nome}" — falta configurar as opções.`
+				: `Abre uma lista com ${quantas} ${quantas === 1 ? "opção" : "opções"} e grava a clicada em "${nome}".`;
+		}
 
 		if (mudanca.operacao === "alternar") {
 			const segundo = mudanca.valor2?.trim() || "remover a propriedade";

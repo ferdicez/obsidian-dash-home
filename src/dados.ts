@@ -25,11 +25,17 @@ export type TipoAcao = "nota" | "pasta" | "busca" | "comando" | "propriedade";
  * - "definir": grava `valor`, seja qual for o conteúdo atual
  * - "alternar": se o atual for `valor`, grava `valor2`; senão, grava `valor`
  *
+ * - "escolher": abre uma lista com as opções e grava a que for clicada
+ *
  * "alternar" existe porque o uso mais comum de um botão de propriedade é um interruptor de estado
  * ("a fazer" ↔ "feito"), e com "definir" isso exigiria dois botões e a usuária escolhendo qual
  * clicar — ou seja, ela teria que saber o estado atual de cabeça.
+ *
+ * "escolher" é a mesma ideia levada a N valores, e evita a multiplicação de botões: uma propriedade
+ * com seis valores possíveis viraria seis botões no dashboard (um por valor), quando o que se quer
+ * é UM botão "Status" que mostra as seis possibilidades na hora do clique.
  */
-export type OperacaoPropriedade = "definir" | "alternar";
+export type OperacaoPropriedade = "definir" | "alternar" | "escolher";
 
 /**
  * O TIPO do valor gravado no frontmatter.
@@ -50,6 +56,14 @@ export interface MudancaPropriedade {
 	valor: string;
 	/** O segundo valor do "alternar". Ignorado quando a operação é "definir". */
 	valor2?: string;
+	/**
+	 * As opções oferecidas no "escolher", na ordem em que aparecem na lista.
+	 *
+	 * Digitadas pela usuária (uma por linha no painel), e não lidas do vault na hora do clique:
+	 * assim ela controla a ordem, e um typo antigo numa nota não vira opção oferecida. O painel
+	 * oferece "puxar do vault" como ponto de partida, mas o que vale é esta lista.
+	 */
+	opcoes?: string[];
 }
 
 export interface Botao {
@@ -382,7 +396,7 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 
 const TIPOS_VALIDOS = new Set<string>(["nota", "pasta", "busca", "comando", "propriedade"]);
 
-const OPERACOES_VALIDAS = new Set<string>(["definir", "alternar"]);
+const OPERACOES_VALIDAS = new Set<string>(["definir", "alternar", "escolher"]);
 const TIPOS_VALOR_VALIDOS = new Set<string>(["texto", "numero", "booleano", "data", "vazio"]);
 
 /**
@@ -424,10 +438,42 @@ export function normalizarPropriedades(valor: unknown): MudancaPropriedade[] | u
 		// Só sobrevive no "alternar": guardar o segundo valor de um "definir" deixaria lixo no
 		// data.json que reapareceria se ela voltasse a alternar depois.
 		if (operacao === "alternar" && typeof bruto.valor2 === "string") mudanca.valor2 = bruto.valor2;
+
+		// As opções, ao contrário, sobrevivem em QUALQUER operação: montar uma lista de seis valores
+		// é trabalho, e apagá-la porque ela espiou o "definir" seria perder esse trabalho em
+		// silêncio. Fora do "escolher" a lista simplesmente não é usada.
+		if (Array.isArray(bruto.opcoes)) {
+			const opcoes = limparOpcoes(bruto.opcoes);
+			if (opcoes.length > 0) mudanca.opcoes = opcoes;
+		}
+
 		saida.push(mudanca);
 	}
 
 	return saida.length > 0 ? saida : undefined;
+}
+
+/**
+ * A lista de opções do "escolher", limpa.
+ *
+ * Repetida seria a mesma opção duas vezes na lista do clique; vazia viraria uma linha em branco
+ * clicável. A ordem é preservada porque é a ordem em que ela vai ver as opções — e ordenar por
+ * conta própria desfaria a escolha dela (fluxo natural: "a fazer, fazendo, feito" não é alfabético).
+ *
+ * A comparação de repetido é EXATA, sem `toLowerCase`: no frontmatter "Feito" e "feito" são valores
+ * diferentes, e descartar um deles como duplicata mudaria o que é gravado na nota.
+ */
+export function limparOpcoes(lista: unknown[]): string[] {
+	const vistos = new Set<string>();
+	const saida: string[] = [];
+	for (const item of lista) {
+		if (typeof item !== "string") continue;
+		const opcao = item.trim();
+		if (!opcao || vistos.has(opcao)) continue;
+		vistos.add(opcao);
+		saida.push(opcao);
+	}
+	return saida;
 }
 
 export function criarMudancaPropriedade(botao: Botao): MudancaPropriedade {
@@ -558,6 +604,79 @@ export function criarBotao(quadrante: Quadrante, texto: string): Botao {
 	};
 	quadrante.botoes.push(botao);
 	return botao;
+}
+
+/**
+ * Duplica um quadrante inteiro — com os botões, o estilo e a largura —, logo abaixo do original.
+ *
+ * Vale ainda mais que duplicar botão: um quadrante carrega a lista de botões, cada um com o seu
+ * próprio estilo e as suas propriedades. Refazer isso à mão para um quadrante parecido é o trabalho
+ * mais longo do painel.
+ *
+ * Ids novos em CADA nível (quadrante, botões, propriedades) — são chaves de acordeão no painel, e
+ * repetidos fariam os dois quadrantes abrirem e fecharem juntos.
+ */
+export function duplicarQuadrante(dashboard: Dashboard, indice: number): Quadrante | undefined {
+	const original = dashboard.quadrantes[indice];
+	if (!original) return undefined;
+
+	const copia: Quadrante = {
+		...original,
+		id: novoId("q"),
+		titulo: `${original.titulo} (cópia)`,
+		estilo: original.estilo ? { ...original.estilo } : undefined,
+		estiloBotao: original.estiloBotao ? { ...original.estiloBotao } : undefined,
+		separador: original.separador ? { ...original.separador } : undefined,
+		botoes: original.botoes.map((b) => ({
+			...b,
+			id: novoId("b"),
+			// Sem "(cópia)" no nome dos botões: eles vão para um quadrante novo, onde não há
+			// nenhum homônimo ao lado — e é o rótulo que aparece no dashboard renderizado.
+			estilo: b.estilo ? { ...b.estilo } : undefined,
+			// `opcoes` é array: sem a cópia, editar a lista de uma mudaria a da outra.
+			propriedades: b.propriedades?.map((p) => ({ ...p, id: novoId("p"), opcoes: p.opcoes ? [...p.opcoes] : undefined })),
+		})),
+	};
+
+	dashboard.quadrantes.splice(indice + 1, 0, copia);
+	return copia;
+}
+
+/**
+ * Duplica um botão, inserindo a cópia logo abaixo do original.
+ *
+ * Existe porque montar um botão é trabalho: além do texto e do destino, ele carrega ícone, a
+ * aparência própria (a terceira camada da herança) e a lista de propriedades. Uma fileira de
+ * botões parecidos — o caso normal num quadrante — significava refazer tudo isso a cada um.
+ *
+ * A cópia é PROFUNDA e com ids NOVOS. Um spread raso deixaria estilo e propriedades compartilhados
+ * entre os dois, e mexer num mudaria o outro — o mesmo cuidado de `clonarDashboard`. E o id é a
+ * chave do acordeão no painel: repetido, os dois botões abririam e fechariam juntos.
+ *
+ * Logo ABAIXO do original, e não no fim da lista: quem duplica quer o par junto para editar a
+ * diferença, e num quadrante com dez botões a cópia apareceria fora da vista.
+ */
+export function duplicarBotao(quadrante: Quadrante, indice: number): Botao | undefined {
+	const original = quadrante.botoes[indice];
+	if (!original) return undefined;
+
+	const copia: Botao = {
+		...original,
+		id: novoId("b"),
+		// "(cópia)" no nome porque dois botões idênticos lado a lado são indistinguíveis na lista
+		// do painel — e ela ainda vai renomear este de qualquer forma.
+		texto: `${original.texto} (cópia)`,
+		estilo: original.estilo ? { ...original.estilo } : undefined,
+		propriedades: original.propriedades?.map((p) => ({
+			...p,
+			id: novoId("p"),
+			// `opcoes` é array: sem a cópia, editar a lista de uma mudaria a da outra.
+			opcoes: p.opcoes ? [...p.opcoes] : undefined,
+		})),
+	};
+
+	quadrante.botoes.splice(indice + 1, 0, copia);
+	return copia;
 }
 
 /** Reordena um item dentro de uma lista (delta -1 = sobe, +1 = desce). Ignora movimentos fora da lista. */

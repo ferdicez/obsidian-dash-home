@@ -271,6 +271,93 @@ function contarPropriedades(app: App): Map<string, number> {
 }
 
 /**
+ * A lista que o botão "escolher" abre no clique — as opções configuradas, para a usuária clicar uma.
+ *
+ * É o que evita a multiplicação de botões: uma propriedade com seis valores possíveis seria seis
+ * botões no dashboard, quando o que se quer é UM botão que mostra as seis possibilidades.
+ *
+ * O valor ATUAL da nota vem marcado. Sem isso ela veria seis opções iguais sem saber em qual está
+ * — e a lista serve tanto para mudar quanto para conferir o estado.
+ */
+export class ModalEscolherValor extends FuzzySuggestModal<string> {
+	constructor(
+		app: App,
+		private titulo: string,
+		private opcoes: string[],
+		private atual: string | undefined,
+		private onEscolher: (valor: string) => void,
+	) {
+		super(app);
+		this.setPlaceholder(titulo);
+		this.setInstructions([
+			{ command: "↑↓", purpose: "navegar" },
+			{ command: "↵", purpose: "escolher" },
+			{ command: "esc", purpose: "cancelar" },
+		]);
+	}
+
+	getItems(): string[] {
+		return this.opcoes;
+	}
+
+	getItemText(opcao: string): string {
+		return opcao;
+	}
+
+	renderSuggestion(match: FuzzyMatch<string>, el: HTMLElement): void {
+		el.addClass("dash-home-sugestao-caminho");
+		el.createDiv({ text: match.item });
+		// Comparação frouxa (aparada e sem caixa) só para MARCAR o atual: aqui é leitura para ela,
+		// não o valor gravado — o que vai para a nota é sempre o texto exato da opção.
+		if (this.atual !== undefined && match.item.trim().toLowerCase() === this.atual.trim().toLowerCase()) {
+			el.createDiv({ cls: "dash-home-sugestao-secundaria", text: "✓ valor atual" });
+		}
+	}
+
+	onChooseItem(opcao: string): void {
+		this.onEscolher(opcao);
+	}
+}
+
+/**
+ * Os valores que uma propriedade já tem nas notas do vault.
+ *
+ * Serve de ponto de partida para a lista de opções do "escolher" — montar seis valores à mão quando
+ * eles já existem nas notas seria trabalho repetido. Mas é só um ponto de partida: o que vale é a
+ * lista que ela edita, senão um typo antigo numa nota viraria opção oferecida.
+ *
+ * Lê do `metadataCache` (memória), não do disco. Valores de LISTA são achatados: numa propriedade
+ * de tags, o que interessa como opção é cada tag, não o conjunto.
+ */
+export function valoresDaPropriedade(app: App, nome: string): string[] {
+	const contagem = new Map<string, number>();
+
+	const registrar = (valor: unknown) => {
+		if (valor === null || valor === undefined) return;
+		if (Array.isArray(valor)) {
+			for (const item of valor) registrar(item);
+			return;
+		}
+		if (typeof valor === "object") return;
+		const texto = String(valor).trim();
+		if (!texto) return;
+		contagem.set(texto, (contagem.get(texto) ?? 0) + 1);
+	};
+
+	for (const arquivo of app.vault.getMarkdownFiles()) {
+		const frontmatter = app.metadataCache.getFileCache(arquivo)?.frontmatter;
+		if (!frontmatter) continue;
+		if (!(nome in frontmatter)) continue;
+		registrar(frontmatter[nome]);
+	}
+
+	// Mais usados primeiro: numa propriedade com um typo antigo, o valor de verdade vem na frente.
+	return [...contagem.keys()].sort(
+		(a, b) => (contagem.get(b) ?? 0) - (contagem.get(a) ?? 0) || a.localeCompare(b),
+	);
+}
+
+/**
  * Escolha de comando do Obsidian — inclusive os dos outros plugins da usuária (My Tasks, Gallery…).
  * `app.commands` é API interna: se ela mudar, a lista vem vazia em vez de o painel quebrar.
  */

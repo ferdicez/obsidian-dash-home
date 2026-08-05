@@ -1,6 +1,7 @@
 import { Notice, TFile, TFolder, type App } from "obsidian";
-import type { Botao } from "./dados";
+import type { Botao, MudancaPropriedade } from "./dados";
 import { aplicarPropriedades } from "./propriedades";
+import { ModalEscolherValor } from "./seletores";
 
 /**
  * O que acontece quando um botão do dashboard é clicado.
@@ -62,12 +63,37 @@ async function alterarPropriedades(app: App, botao: Botao): Promise<void> {
 		return;
 	}
 
+	// As escolhas são resolvidas ANTES de qualquer escrita: cada "escolher" abre uma lista e espera
+	// o clique dela. Fazer isso dentro do processFrontMatter significaria segurar o arquivo aberto
+	// enquanto um modal espera — e um "esc" no meio deixaria a nota alterada pela metade.
+	const resolvidas: MudancaPropriedade[] = [];
+	for (const mudanca of mudancas) {
+		if (mudanca.operacao !== "escolher") {
+			resolvidas.push(mudanca);
+			continue;
+		}
+
+		const opcoes = mudanca.opcoes ?? [];
+		if (opcoes.length === 0) {
+			new Notice(`"${mudanca.nome}" não tem opções configuradas. Configurações → Dash Home.`);
+			return;
+		}
+
+		const escolhido = await escolherValor(app, arquivo, mudanca, opcoes);
+		// Cancelou (esc ou clique fora): nada é gravado, nem desta mudança nem das outras. Aplicar
+		// só as anteriores deixaria a nota num estado que ela não pediu.
+		if (escolhido === undefined) return;
+
+		// Vira um "definir" com o valor clicado — daí para baixo o caminho é o mesmo dos outros.
+		resolvidas.push({ ...mudanca, operacao: "definir", valor: escolhido });
+	}
+
 	let resumo: string[] = [];
 	try {
 		// processFrontMatter cria o bloco de propriedades se ainda não existir, faz o merge com o que
 		// já está lá e reescreve só ele — o corpo da nota não é tocado.
 		await app.fileManager.processFrontMatter(arquivo, (frontmatter) => {
-			resumo = aplicarPropriedades(frontmatter, mudancas);
+			resumo = aplicarPropriedades(frontmatter, resolvidas);
 		});
 	} catch (e) {
 		console.warn("[dash-home] falha ao alterar as propriedades da nota:", e);
@@ -83,6 +109,46 @@ async function alterarPropriedades(app: App, botao: Botao): Promise<void> {
 	// Dizer o que mudou, e em qual nota: a alteração acontece no frontmatter, que pode estar fora da
 	// tela (ou recolhido), então sem a Notice o clique não teria retorno visível nenhum.
 	new Notice(`${arquivo.basename} — ${resumo.join(", ")}`);
+}
+
+/**
+ * Abre a lista de opções e devolve a escolhida — ou `undefined` se ela cancelou.
+ *
+ * `FuzzySuggestModal` avisa por callback, não por Promise; a ponte é esta. O `onClose` resolve com
+ * `undefined` porque fechar sem escolher (esc, clique fora) tem que ser distinguível de escolher —
+ * senão o cancelamento gravaria alguma coisa.
+ */
+function escolherValor(
+	app: App,
+	arquivo: TFile,
+	mudanca: MudancaPropriedade,
+	opcoes: string[],
+): Promise<string | undefined> {
+	// O valor atual, para vir marcado na lista: serve tanto para mudar quanto para conferir em qual
+	// estado a nota está.
+	const atual = app.metadataCache.getFileCache(arquivo)?.frontmatter?.[mudanca.nome];
+	const atualTexto = atual === null || atual === undefined ? undefined : String(atual);
+
+	return new Promise((resolver) => {
+		let escolhido: string | undefined;
+		const modal = new ModalEscolherValor(
+			app,
+			`${mudanca.nome} — ${arquivo.basename}`,
+			opcoes,
+			atualTexto,
+			(valor) => {
+				escolhido = valor;
+			},
+		);
+		// onClose corre depois do onChooseItem nos dois caminhos (escolha e cancelamento), então é
+		// o único ponto que resolve — sem risco de resolver duas vezes.
+		const fecharOriginal = modal.onClose.bind(modal);
+		modal.onClose = () => {
+			fecharOriginal();
+			resolver(escolhido);
+		};
+		modal.open();
+	});
 }
 
 async function abrirNota(app: App, caminho: string, novaAba: boolean): Promise<void> {
