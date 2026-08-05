@@ -190,6 +190,33 @@ export interface BotaoSalvo {
 	propriedades?: MudancaPropriedade[];
 	criar?: CriarNota;
 	estilo?: EstiloBotao;
+	/**
+	 * O id do grupo em que este botão fica na biblioteca. `undefined` = "Sem grupo".
+	 *
+	 * Um grupo SÓ por botão (escolha dela): a biblioteca se lê como uma lista de pastas, e achar um
+	 * botão é saber em qual delas ele está. Com etiquetas, o mesmo botão apareceria repetido em
+	 * vários pontos da lista.
+	 *
+	 * É um id, e não o nome do grupo: assim renomear o grupo não desgarra os botões dele.
+	 */
+	grupoId?: string;
+}
+
+/**
+ * Um agrupamento de botões salvos na biblioteca.
+ *
+ * Cadastrado à parte (escolha dela) em vez de nascer do nome digitado em cada botão: assim o grupo
+ * tem ícone e ORDEM próprios, e continua existindo mesmo enquanto está vazio — dá para preparar a
+ * organização antes de ter os botões.
+ *
+ * Vale só para o painel: o grupo não vai para a nota nem muda como o dashboard é desenhado. É uma
+ * ajuda para ela ACHAR o botão na hora de escolher.
+ */
+export interface GrupoBotoes {
+	id: string;
+	nome: string;
+	/** id completo do ícone Lucide, mostrado ao lado do nome do grupo. */
+	icone?: string;
 }
 
 /**
@@ -355,6 +382,13 @@ export interface DadosDashHome {
 	 * o próximo.
 	 */
 	botoesSalvos: BotaoSalvo[];
+	/**
+	 * Os grupos da biblioteca, na ordem em que aparecem no painel.
+	 *
+	 * Lista própria (e não deduzida dos botões) porque o grupo é cadastrado à parte: ele tem ícone,
+	 * ordem e sobrevive vazio. Ver `GrupoBotoes`.
+	 */
+	gruposBotoes: GrupoBotoes[];
 }
 
 /**
@@ -413,6 +447,7 @@ export const DADOS_PADRAO: DadosDashHome = {
 	estiloGlobal: {},
 	estiloBotaoGlobal: {},
 	botoesSalvos: [],
+	gruposBotoes: [],
 };
 
 /** Devolvido quando não há dashboard nenhum. Congelado: ninguém escreve nele por acidente. */
@@ -573,7 +608,16 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 	dados.estiloBotaoGlobal = normalizarEstiloBotao(dados.estiloBotaoGlobal) ?? {};
 
 	// A biblioteca é lista e o Object.assign é raso: um data.json anterior a ela vem sem a chave.
+	dados.gruposBotoes = normalizarGrupos(dados.gruposBotoes);
 	dados.botoesSalvos = normalizarBotoesSalvos(dados.botoesSalvos);
+
+	// Um `grupoId` que não aponta para grupo nenhum (grupo excluído por fora, data.json editado à
+	// mão) viraria um botão invisível: ele não estaria em grupo nenhum NEM em "Sem grupo". Cai em
+	// "Sem grupo", que é onde ela consegue vê-lo e reagrupá-lo.
+	const idsDeGrupo = new Set(dados.gruposBotoes.map((g) => g.id));
+	for (const salvo of dados.botoesSalvos) {
+		if (salvo.grupoId && !idsDeGrupo.has(salvo.grupoId)) delete salvo.grupoId;
+	}
 
 	for (const dash of dados.dashboards) {
 		dash.colunas = limitarColunas(dash.colunas);
@@ -965,6 +1009,8 @@ export function normalizarBotoesSalvos(valor: unknown): BotaoSalvo[] {
 			destino: typeof bruto.destino === "string" ? bruto.destino : "",
 		};
 		if (typeof bruto.icone === "string" && bruto.icone) salvo.icone = bruto.icone;
+		// O grupo é validado contra a lista de grupos em `carregarDados` — aqui só o tipo.
+		if (typeof bruto.grupoId === "string" && bruto.grupoId) salvo.grupoId = bruto.grupoId;
 		salvo.propriedades = normalizarPropriedades(bruto.propriedades);
 		salvo.criar = normalizarCriar(bruto.criar);
 		salvo.estilo = normalizarEstiloBotao(bruto.estilo);
@@ -974,14 +1020,81 @@ export function normalizarBotoesSalvos(valor: unknown): BotaoSalvo[] {
 	return saida;
 }
 
+/**
+ * Blindagem da lista de grupos vinda do data.json.
+ *
+ * SEM ID é descartado, pela mesma razão dos botões salvos: o id é o que os botões apontam, e
+ * inventar um deixaria os `grupoId` existentes sem destino. Nome vazio, por outro lado, sobrevive —
+ * o painel mostra "Sem nome" e ela renomeia; descartar o grupo levaria junto o agrupamento dos
+ * botões dele.
+ */
+export function normalizarGrupos(valor: unknown): GrupoBotoes[] {
+	if (!Array.isArray(valor)) return [];
+
+	const saida: GrupoBotoes[] = [];
+	const vistos = new Set<string>();
+	for (const item of valor) {
+		if (!item || typeof item !== "object") continue;
+		const bruto = item as Partial<GrupoBotoes>;
+		if (typeof bruto.id !== "string" || !bruto.id) continue;
+		// Id repetido faria `find` devolver sempre o primeiro, e os botões do segundo grupo
+		// apareceriam no lugar errado.
+		if (vistos.has(bruto.id)) continue;
+		vistos.add(bruto.id);
+
+		const grupo: GrupoBotoes = {
+			id: bruto.id,
+			nome: typeof bruto.nome === "string" ? bruto.nome : "",
+		};
+		if (typeof bruto.icone === "string" && bruto.icone) grupo.icone = bruto.icone;
+		saida.push(grupo);
+	}
+	return saida;
+}
+
+/** Cria um grupo novo na biblioteca. */
+export function criarGrupo(dados: DadosDashHome, nome: string): GrupoBotoes {
+	const grupo: GrupoBotoes = {
+		id: novoId("g"),
+		nome: nome.trim() || "Novo grupo",
+	};
+	(dados.gruposBotoes ??= []).push(grupo);
+	return grupo;
+}
+
+/**
+ * Exclui um grupo. Os botões dele NÃO são apagados — voltam para "Sem grupo".
+ *
+ * Apagar os botões junto seria destrutivo demais: o grupo é só uma gaveta, e ela pode querer
+ * desfazer a organização sem perder os botões (que ainda estão em uso nos cards).
+ */
+export function removerGrupo(dados: DadosDashHome, grupoId: string): boolean {
+	const i = (dados.gruposBotoes ?? []).findIndex((g) => g.id === grupoId);
+	if (i < 0) return false;
+
+	for (const salvo of dados.botoesSalvos ?? []) {
+		if (salvo.grupoId === grupoId) delete salvo.grupoId;
+	}
+	dados.gruposBotoes.splice(i, 1);
+	return true;
+}
+
+/** Quantos botões salvos estão neste grupo. */
+export function botoesDoGrupo(dados: DadosDashHome, grupoId: string | undefined): BotaoSalvo[] {
+	return (dados.botoesSalvos ?? []).filter((s) => (s.grupoId ?? undefined) === grupoId);
+}
+
 /** Cadastra um botão novo na biblioteca, vazio e pronto para ser configurado. */
-export function criarBotaoSalvo(dados: DadosDashHome, texto: string): BotaoSalvo {
+export function criarBotaoSalvo(dados: DadosDashHome, texto: string, grupoId?: string): BotaoSalvo {
 	const salvo: BotaoSalvo = {
 		id: novoId("s"),
 		texto: texto.trim() || "Novo botão salvo",
 		tipo: "nota",
 		destino: "",
 	};
+	// Nasce no grupo em que ela clicou "+": criar dentro de um grupo e o botão aparecer em outro
+	// lugar da lista obrigaria a movê-lo logo em seguida, toda vez.
+	if (grupoId) salvo.grupoId = grupoId;
 	(dados.botoesSalvos ??= []).push(salvo);
 	return salvo;
 }
@@ -1097,8 +1210,11 @@ export function removerBotaoSalvo(dados: DadosDashHome, salvoId: string): boolea
 }
 
 /** Duplica um molde da biblioteca, com a cópia logo abaixo do original. */
-export function duplicarBotaoSalvo(dados: DadosDashHome, indice: number): BotaoSalvo | undefined {
-	const original = (dados.botoesSalvos ?? [])[indice];
+export function duplicarBotaoSalvo(dados: DadosDashHome, salvoId: string): BotaoSalvo | undefined {
+	// Por ID, e não por índice: desde os grupos o painel itera por grupo, e o índice que ele
+	// enxerga não é o da lista global — duplicar copiaria o botão errado.
+	const indice = (dados.botoesSalvos ?? []).findIndex((s) => s.id === salvoId);
+	const original = dados.botoesSalvos?.[indice];
 	if (!original) return undefined;
 
 	const copia: BotaoSalvo = {

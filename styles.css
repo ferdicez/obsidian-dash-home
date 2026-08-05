@@ -652,6 +652,33 @@
 	overflow-y: auto;
 }
 
+/* O nome do grupo acima dos botões dele, na lista de escolha. Discreto de propósito: é uma placa
+   de seção, não um item clicável — quem clica são os botões abaixo dele. */
+.dash-home-config-salvo-grupo {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+	margin: 0.7em 0 0.15em;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+/* O primeiro cabeçalho encosta no topo do modal: sem a margem de cima ele fica colado no título. */
+.dash-home-config-salvo-grupo:first-child {
+	margin-top: 0;
+}
+
+.dash-home-config-salvo-grupo-icone {
+	display: flex;
+}
+
+.dash-home-config-salvo-grupo-icone svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
 /* `text-align: left` porque <button> centraliza por padrão, e aqui a linha é um item de lista. */
 .dash-home-config-salvo-item {
 	display: flex;
@@ -672,8 +699,13 @@
 	border-color: var(--interactive-accent);
 }
 
+/* Largura fixa mesmo VAZIO: sem ícone, o texto encostaria à esquerda e a coluna de nomes sairia
+   serrilhada — botão com ícone recuado, botão sem ícone não. O slot reservado mantém a coluna reta. */
 .dash-home-config-salvo-icone {
 	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--icon-s);
 	color: var(--text-muted);
 	flex-shrink: 0;
 }

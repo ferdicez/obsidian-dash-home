@@ -3,7 +3,9 @@ import { abrirAcordeao, criarAcordeao } from "./acordeao";
 import {
 	CORES,
 	botaoResolvido,
+	botoesDoGrupo,
 	criarBotaoSalvo,
+	criarGrupo,
 	criarDashboard,
 	criarMudancaPropriedade,
 	criarQuadrante,
@@ -15,10 +17,12 @@ import {
 	ehControle,
 	ehHex,
 	removerBotaoSalvo,
+	removerGrupo,
 	trocarBotaoSalvo,
 	usarBotaoSalvo,
 	usosDoBotaoSalvo,
 	type BotaoSalvo,
+	type GrupoBotoes,
 	limitarColunas,
 	limitarLargura,
 	limitarLarguraQuadrante,
@@ -574,9 +578,29 @@ export class PainelConfigDashCards extends PluginSettingTab {
 				});
 			}
 
-			salvos.forEach((salvo, indice) => this.desenharBotaoSalvo(corpo, dados, salvo, indice));
+			// Um acordeão por grupo, na ordem que ela definiu, e "Sem grupo" por último — ele é o
+			// resto, não uma categoria; primeiro na lista, empurraria os grupos dela para baixo.
+			for (const grupo of dados.gruposBotoes ?? []) {
+				this.desenharGrupo(corpo, dados, grupo);
+			}
 
-			new Setting(corpo).addButton((b) =>
+			const semGrupo = botoesDoGrupo(dados, undefined);
+			if (semGrupo.length > 0) {
+				// Só aparece quando há algo dentro: um "Sem grupo" vazio permanente seria ruído.
+				const secaoSem = criarAcordeao(corpo, {
+					chave: "grupo:sem-grupo",
+					titulo: "Sem grupo",
+					resumo: semGrupo.length === 1 ? "1 botão" : `${semGrupo.length} botões`,
+					aninhado: true,
+					abertoPorPadrao: true,
+				});
+				secaoSem.sePreenchido((dentro) => {
+					for (const salvo of semGrupo) this.desenharBotaoSalvo(dentro, dados, salvo, semGrupo);
+				});
+			}
+
+			const acoesRodape = new Setting(corpo);
+			acoesRodape.addButton((b) =>
 				b
 					.setButtonText("+ Novo botão salvo")
 					.setCta()
@@ -586,11 +610,27 @@ export class PainelConfigDashCards extends PluginSettingTab {
 						await this.aplicar();
 					}),
 			);
+			acoesRodape.addButton((b) =>
+				b
+					.setButtonText("+ Novo grupo")
+					.setTooltip("Uma gaveta para organizar os botões salvos")
+					.onClick(async () => {
+						const novo = criarGrupo(dados, "Novo grupo");
+						abrirAcordeao(`grupo:${novo.id}`);
+						await this.aplicar();
+					}),
+			);
 		});
 
-		// O mesmo botão no cabeçalho, pelo motivo do "+ Novo quadrante": com a lista longa, chegar
-		// ao botão do fim exigiria rolar por todos os moldes.
+		// Os mesmos botões no cabeçalho, pelo motivo do "+ Novo quadrante": com a lista longa,
+		// chegar ao botão do fim exigiria rolar por todos os moldes.
 		const acoes = secao.cabecalho.createDiv({ cls: "dash-home-acordeao-acoes" });
+		this.botaoIcone(acoes, "folder-plus", "Novo grupo", true, async () => {
+			const novo = criarGrupo(dados, "Novo grupo");
+			abrirAcordeao("secao:biblioteca");
+			abrirAcordeao(`grupo:${novo.id}`);
+			await this.aplicar();
+		});
 		this.botaoIcone(acoes, "plus", "Novo botão salvo", true, async () => {
 			const novo = criarBotaoSalvo(dados, "Novo botão salvo");
 			abrirAcordeao("secao:biblioteca");
@@ -599,14 +639,98 @@ export class PainelConfigDashCards extends PluginSettingTab {
 		});
 	}
 
-	/** Um molde da biblioteca: nome, ícone, ação — e quantos botões dependem dele. */
+	/** Um grupo da biblioteca: nome, ícone, os botões dele — e o botão de criar já dentro dele. */
+	private desenharGrupo(el: HTMLElement, dados: DadosDashHome, grupo: GrupoBotoes): void {
+		const doGrupo = botoesDoGrupo(dados, grupo.id);
+		const indice = dados.gruposBotoes.indexOf(grupo);
+
+		const secao = criarAcordeao(el, {
+			chave: `grupo:${grupo.id}`,
+			titulo: grupo.nome || "Sem nome",
+			resumo: doGrupo.length === 0 ? "vazio" : doGrupo.length === 1 ? "1 botão" : `${doGrupo.length} botões`,
+			aninhado: true,
+		});
+
+		const acoes = secao.cabecalho.createDiv({ cls: "dash-home-acordeao-acoes" });
+		this.botaoIcone(acoes, "chevron-up", "Subir", indice > 0, async () => {
+			mover(dados.gruposBotoes, indice, -1);
+			await this.aplicar();
+		});
+		this.botaoIcone(acoes, "chevron-down", "Descer", indice < dados.gruposBotoes.length - 1, async () => {
+			mover(dados.gruposBotoes, indice, 1);
+			await this.aplicar();
+		});
+		this.botaoIcone(acoes, "plus", "Novo botão neste grupo", true, async () => {
+			const novo = criarBotaoSalvo(dados, "Novo botão salvo", grupo.id);
+			abrirAcordeao(`grupo:${grupo.id}`);
+			abrirAcordeao(`${novo.id}:salvo`);
+			await this.aplicar();
+		});
+		this.botaoIcone(acoes, "trash-2", "Excluir grupo", true, async () => {
+			// Excluir o grupo NÃO apaga os botões — mas ela precisa saber disso antes de clicar,
+			// senão a confirmação parece ameaçar os botões que ela montou.
+			if (doGrupo.length > 0) {
+				const ok = await confirmar(
+					this.app,
+					`Excluir o grupo "${grupo.nome || "sem nome"}"?`,
+					`Os ${doGrupo.length === 1 ? "1 botão" : `${doGrupo.length} botões`} dele não são apagados: voltam para "Sem grupo".`,
+				);
+				if (!ok) return;
+			}
+			removerGrupo(dados, grupo.id);
+			await this.aplicar();
+		});
+
+		secao.sePreenchido((corpo) => {
+			const cabecalho = new Setting(corpo).setClass("dash-home-config-botao-topo");
+			cabecalho.addText((texto) =>
+				texto
+					.setPlaceholder("Nome do grupo")
+					.setValue(grupo.nome)
+					.onChange((valor) => {
+						grupo.nome = valor;
+						this.salvarDigitacao();
+					}),
+			);
+			cabecalho.addButton((b) => {
+				if (grupo.icone) b.setIcon(grupo.icone);
+				else b.setButtonText("Ícone");
+				b.setTooltip("Ícone do grupo (só na lista; não vai para o dashboard)");
+				b.onClick(() => {
+					new ModalEscolherIcone(this.app, grupo.nome, grupo.icone, async (icone) => {
+						grupo.icone = icone;
+						await this.aplicar();
+					}).open();
+				});
+			});
+
+			if (doGrupo.length === 0) {
+				corpo.createDiv({
+					cls: "dash-home-config-vazio",
+					text: "Nenhum botão neste grupo. Use o + no cabeçalho, ou mude o grupo de um botão existente.",
+				});
+				return;
+			}
+
+			for (const salvo of doGrupo) this.desenharBotaoSalvo(corpo, dados, salvo, doGrupo);
+		});
+	}
+
+	/**
+	 * Um molde da biblioteca: nome, ícone, ação — e quantos botões dependem dele.
+	 *
+	 * `irmaos` é a lista do GRUPO em que ele está sendo desenhado, não a lista global: é ela que
+	 * define o que "subir" e "descer" significam aqui. Mover pelo índice global faria o botão pular
+	 * para dentro de outro grupo — ou trocar de lugar com um botão que ela nem está vendo.
+	 */
 	private desenharBotaoSalvo(
 		el: HTMLElement,
 		dados: DadosDashHome,
 		salvo: BotaoSalvo,
-		indice: number,
+		irmaos: BotaoSalvo[],
 	): void {
 		const usos = usosDoBotaoSalvo(dados, salvo.id);
+		const posicao = irmaos.indexOf(salvo);
 
 		const secao = criarAcordeao(el, {
 			chave: `${salvo.id}:salvo`,
@@ -618,16 +742,18 @@ export class PainelConfigDashCards extends PluginSettingTab {
 		});
 
 		const acoes = secao.cabecalho.createDiv({ cls: "dash-home-acordeao-acoes" });
-		this.botaoIcone(acoes, "chevron-up", "Subir", indice > 0, async () => {
-			mover(dados.botoesSalvos, indice, -1);
+		this.botaoIcone(acoes, "chevron-up", "Subir", posicao > 0, async () => {
+			// A ordem vive na lista GLOBAL, mas o movimento é entre os vizinhos de grupo: troca de
+			// posição com o irmão de cima, seja qual for a distância deles na lista global.
+			trocarNaLista(dados.botoesSalvos, salvo, irmaos[posicao - 1]);
 			await this.aplicar();
 		});
-		this.botaoIcone(acoes, "chevron-down", "Descer", indice < (dados.botoesSalvos?.length ?? 0) - 1, async () => {
-			mover(dados.botoesSalvos, indice, 1);
+		this.botaoIcone(acoes, "chevron-down", "Descer", posicao < irmaos.length - 1, async () => {
+			trocarNaLista(dados.botoesSalvos, salvo, irmaos[posicao + 1]);
 			await this.aplicar();
 		});
 		this.botaoIcone(acoes, "copy", "Duplicar", true, async () => {
-			const copia = duplicarBotaoSalvo(dados, indice);
+			const copia = duplicarBotaoSalvo(dados, salvo.id);
 			if (copia) abrirAcordeao(`${copia.id}:salvo`);
 			await this.aplicar();
 		});
@@ -668,6 +794,25 @@ export class PainelConfigDashCards extends PluginSettingTab {
 					}).open();
 				});
 			});
+
+			// Em qual gaveta ele fica. Dropdown (e não texto livre) porque o grupo é cadastrado à
+			// parte: digitar um nome criaria um grupo fantasma que não existe na lista.
+			new Setting(corpo)
+				.setName("Grupo")
+				.setDesc("Só organiza a lista daqui — não muda nada no dashboard.")
+				.addDropdown((drop) => {
+					drop.addOption("", "Sem grupo");
+					for (const g of dados.gruposBotoes ?? []) drop.addOption(g.id, g.nome || "Sem nome");
+					drop.setValue(salvo.grupoId ?? "");
+					drop.onChange(async (valor) => {
+						if (valor) salvo.grupoId = valor;
+						else delete salvo.grupoId;
+						// O botão vai mudar de lugar na tela: abre o grupo de destino, senão ele
+						// "sumiria" dentro de um acordeão fechado.
+						abrirAcordeao(valor ? `grupo:${valor}` : "grupo:sem-grupo");
+						await this.aplicar();
+					});
+				});
 
 			// Os MESMOS editores do botão de quadrante — ver o comentário de `Configuravel`.
 			this.desenharDestino(corpo, salvo);
@@ -1061,10 +1206,15 @@ export class PainelConfigDashCards extends PluginSettingTab {
 								this.atualizar(true);
 								return;
 							}
-							new ModalEscolherBotaoSalvo(this.app, salvos, async (salvo) => {
-								usarBotaoSalvo(quadrante, salvo);
-								await this.aplicar();
-							}).open();
+							new ModalEscolherBotaoSalvo(
+								this.app,
+								salvos,
+								async (salvo) => {
+									usarBotaoSalvo(quadrante, salvo);
+									await this.aplicar();
+								},
+								this.plugin.dados.gruposBotoes,
+							).open();
 						}),
 				);
 
@@ -1990,12 +2140,17 @@ export class PainelConfigDashCards extends PluginSettingTab {
 					.setButtonText("Trocar")
 					.setTooltip("Usar outro botão salvo no lugar deste")
 					.onClick(() => {
-						new ModalEscolherBotaoSalvo(this.app, salvos, async (novo) => {
-							// Troca o vínculo no lugar, preservando a POSIÇÃO do botão na lista —
-							// remover e adicionar o jogaria para o fim do card.
-							trocarBotaoSalvo(botao, novo);
-							await this.aplicar();
-						}).open();
+						new ModalEscolherBotaoSalvo(
+							this.app,
+							salvos,
+							async (novo) => {
+								// Troca o vínculo no lugar, preservando a POSIÇÃO do botão na lista —
+								// remover e adicionar o jogaria para o fim do card.
+								trocarBotaoSalvo(botao, novo);
+								await this.aplicar();
+							},
+							this.plugin.dados.gruposBotoes,
+						).open();
 					}),
 			);
 		} else {
@@ -2014,10 +2169,15 @@ export class PainelConfigDashCards extends PluginSettingTab {
 					.setButtonText("Trocar por um salvo")
 					.setCta()
 					.onClick(() => {
-						new ModalEscolherBotaoSalvo(this.app, salvos, async (novo) => {
-							trocarBotaoSalvo(botao, novo);
-							await this.aplicar();
-						}).open();
+						new ModalEscolherBotaoSalvo(
+							this.app,
+							salvos,
+							async (novo) => {
+								trocarBotaoSalvo(botao, novo);
+								await this.aplicar();
+							},
+							this.plugin.dados.gruposBotoes,
+						).open();
 					}),
 			);
 		}
@@ -2770,6 +2930,21 @@ export class PainelConfigDashCards extends PluginSettingTab {
 	}
 }
 
+/**
+ * Troca dois itens de posição dentro da lista.
+ *
+ * Serve ao subir/descer dentro de um grupo: os dois vizinhos de grupo podem estar longe um do outro
+ * na lista global (com botões de outros grupos entre eles), e `mover()` — que desloca uma casa —
+ * empurraria o botão para dentro do grupo errado.
+ */
+function trocarNaLista<T>(lista: T[], a: T, b: T): void {
+	const i = lista.indexOf(a);
+	const j = lista.indexOf(b);
+	if (i < 0 || j < 0) return;
+	lista[i] = b;
+	lista[j] = a;
+}
+
 function semPrefixo(id: string): string {
 	return id.startsWith("lucide-") ? id.slice("lucide-".length) : id;
 }
@@ -2945,6 +3120,7 @@ class ModalEscolherBotaoSalvo extends Modal {
 		app: App,
 		private salvos: BotaoSalvo[],
 		private onEscolher: (salvo: BotaoSalvo) => void | Promise<void>,
+		private grupos: GrupoBotoes[] = [],
 	) {
 		super(app);
 	}
@@ -2961,20 +3137,43 @@ class ModalEscolherBotaoSalvo extends Modal {
 		}
 
 		const lista = this.contentEl.createDiv({ cls: "dash-home-config-salvos" });
-		for (const salvo of this.salvos) {
-			const item = lista.createEl("button", { cls: "dash-home-config-salvo-item" });
 
-			const icone = item.createSpan({ cls: "dash-home-config-salvo-icone" });
-			if (salvo.icone) setIcon(icone, salvo.icone);
+		// É AQUI que o agrupamento paga: na hora de escolher, saber em que grupo o botão está é o
+		// que evita varrer a lista inteira. Os grupos saem na ordem dela; "Sem grupo" por último.
+		const secoes: Array<{ titulo: string; icone?: string; itens: BotaoSalvo[] }> = [];
+		for (const grupo of this.grupos) {
+			const itens = this.salvos.filter((s) => s.grupoId === grupo.id);
+			if (itens.length > 0) secoes.push({ titulo: grupo.nome || "Sem nome", icone: grupo.icone, itens });
+		}
+		const semGrupo = this.salvos.filter((s) => !s.grupoId || !this.grupos.some((g) => g.id === s.grupoId));
+		if (semGrupo.length > 0) secoes.push({ titulo: "Sem grupo", itens: semGrupo });
 
-			const textos = item.createDiv({ cls: "dash-home-config-salvo-textos" });
-			textos.createDiv({ cls: "dash-home-config-salvo-nome", text: salvo.texto || "Sem nome" });
-			textos.createDiv({ cls: "dash-home-config-salvo-acao", text: descreverAcao(salvo) });
+		// Um cabeçalho só faz sentido quando há mais de um grupo para distinguir: com um só, ele
+		// seria uma linha repetindo o óbvio acima de todos os itens.
+		const mostrarTitulos = secoes.length > 1;
 
-			item.addEventListener("click", () => {
-				this.close();
-				void this.onEscolher(salvo);
-			});
+		for (const secao of secoes) {
+			if (mostrarTitulos) {
+				const cabecalho = lista.createDiv({ cls: "dash-home-config-salvo-grupo" });
+				if (secao.icone) setIcon(cabecalho.createSpan({ cls: "dash-home-config-salvo-grupo-icone" }), secao.icone);
+				cabecalho.createSpan({ text: secao.titulo });
+			}
+
+			for (const salvo of secao.itens) {
+				const item = lista.createEl("button", { cls: "dash-home-config-salvo-item" });
+
+				const icone = item.createSpan({ cls: "dash-home-config-salvo-icone" });
+				if (salvo.icone) setIcon(icone, salvo.icone);
+
+				const textos = item.createDiv({ cls: "dash-home-config-salvo-textos" });
+				textos.createDiv({ cls: "dash-home-config-salvo-nome", text: salvo.texto || "Sem nome" });
+				textos.createDiv({ cls: "dash-home-config-salvo-acao", text: descreverAcao(salvo) });
+
+				item.addEventListener("click", () => {
+					this.close();
+					void this.onEscolher(salvo);
+				});
+			}
 		}
 	}
 
