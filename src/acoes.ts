@@ -1,7 +1,7 @@
-import { Notice, TFile, TFolder, type App } from "obsidian";
+import { Notice, TFile, TFolder, normalizePath, type App } from "obsidian";
 import { ehControle, type Botao, type MudancaPropriedade, type TipoValorPropriedade } from "./dados";
 import { aplicarPropriedades } from "./propriedades";
-import { ModalEscolherValor } from "./seletores";
+import { ModalEscolherValor, ModalNomeDaNotaNova } from "./seletores";
 
 /**
  * O que acontece quando um botão do dashboard é clicado.
@@ -14,6 +14,11 @@ export async function executarAcao(app: App, botao: Botao, novaAba: boolean): Pr
 	// ele grava está em `propriedades`.
 	if (botao.tipo === "propriedade") {
 		return alterarPropriedades(app, botao);
+	}
+
+	// Também não usa `destino`: o template e a pasta ficam em `criar`, e o nome vem do clique.
+	if (botao.tipo === "criar") {
+		return criarNota(app, botao, novaAba);
 	}
 
 	const destino = botao.destino?.trim();
@@ -219,6 +224,170 @@ function escolherValor(
 		};
 		modal.open();
 	});
+}
+
+/**
+ * Cria uma nota nova a partir de um template, na pasta escolhida, e a abre.
+ *
+ * ── Por que perguntar o nome ─────────────────────────────────────────────────────────────
+ *
+ * Decisão dela: o mesmo botão serve para "Cliente Acme" e para uma nota do dia, e um nome
+ * automático só serviria ao segundo caso. A caixinha abre com a sugestão SELECIONADA, então
+ * aceitar é um Enter e trocar é digitar por cima.
+ *
+ * ── Templater ────────────────────────────────────────────────────────────────────────────
+ *
+ * Se o Templater estiver ativo, é ele quem processa o arquivo — é o que faz `<% tp.date.now() %>`
+ * funcionar, e ela o usa no vault. Sem ele, o conteúdo é copiado como está: um template com
+ * sintaxe do Templater viraria texto literal, o que é feio mas honesto (e melhor que não criar
+ * nota nenhuma).
+ */
+async function criarNota(app: App, botao: Botao, novaAba: boolean): Promise<void> {
+	const cfg = botao.criar;
+	const pasta = cfg?.pasta?.trim() ?? "";
+
+	const sugestao = expandirData(cfg?.nomeSugerido?.trim() || "Nova nota");
+
+	const nome = await perguntarNome(app, sugestao, pasta);
+	// Cancelou: nada é criado. Um esc que ainda assim criasse "Nova nota" na raiz seria pior que
+	// não fazer nada — ela teria que caçar e apagar o arquivo.
+	if (nome === undefined) return;
+
+	// Só o nome é limpo, não o caminho: se ela digitar "Clientes/Acme", a barra é dela e vale como
+	// subpasta. Os outros caracteres são os que o sistema de arquivos recusa.
+	const limpo = nome.replace(/[\\:*?"<>|]/g, "").trim();
+	if (!limpo) {
+		new Notice("Esse nome não pode ser usado para um arquivo.");
+		return;
+	}
+
+	const base = limpo.endsWith(".md") ? limpo.slice(0, -3) : limpo;
+	const caminho = normalizePath(pasta ? `${pasta}/${base}.md` : `${base}.md`);
+
+	// Nunca sobrescrever: a nota existente pode ter conteúdo dela. Abrir a que já existe é o
+	// comportamento útil (ela provavelmente quis chegar lá), e o aviso diz o que aconteceu.
+	const jaExiste = app.vault.getAbstractFileByPath(caminho);
+	if (jaExiste instanceof TFile) {
+		new Notice(`"${base}" já existe — abrindo a nota existente.`);
+		await app.workspace.getLeaf(novaAba ? "tab" : false).openFile(jaExiste);
+		return;
+	}
+
+	// A pasta pode não existir ainda (ela escolheu no painel e depois renomeou, ou o nome tem
+	// subpasta). Criar em silêncio é melhor que falhar pedindo que ela crie à mão.
+	const pastaDoArquivo = caminho.slice(0, caminho.lastIndexOf("/"));
+	if (pastaDoArquivo && !app.vault.getAbstractFileByPath(pastaDoArquivo)) {
+		try {
+			await app.vault.createFolder(pastaDoArquivo);
+		} catch {
+			// Corrida com outro processo criando a mesma pasta: se ela existe agora, seguimos.
+		}
+	}
+
+	const conteudo = await lerTemplate(app, cfg?.template);
+	if (conteudo === null) return; // o aviso já foi dado
+
+	let arquivo: TFile;
+	try {
+		arquivo = await app.vault.create(caminho, conteudo);
+	} catch (e) {
+		console.warn("[dash-home] falha ao criar a nota:", e);
+		new Notice(`Não consegui criar "${caminho}".`);
+		return;
+	}
+
+	await app.workspace.getLeaf(novaAba ? "tab" : false).openFile(arquivo);
+
+	// O Templater processa DEPOIS de a nota existir e estar aberta: os comandos dele (`tp.file.*`)
+	// agem sobre o arquivo ativo. Falhar aqui não desfaz a nota — ela já está criada e aberta, com
+	// o conteúdo bruto do template, o que é recuperável.
+	await processarComTemplater(app, arquivo, cfg?.template);
+}
+
+/** Abre a caixinha do nome e devolve o que ela digitou — ou `undefined` se cancelou. */
+function perguntarNome(app: App, sugestao: string, pasta: string): Promise<string | undefined> {
+	return new Promise((resolver) => {
+		let escolhido: string | undefined;
+		const modal = new ModalNomeDaNotaNova(app, sugestao, pasta, (nome) => {
+			escolhido = nome;
+		});
+		// Como nos outros modais do plugin: `onClose` corre depois do confirmar nos dois caminhos,
+		// então é o único ponto que resolve — sem risco de resolver duas vezes.
+		const fecharOriginal = modal.onClose.bind(modal);
+		modal.onClose = () => {
+			fecharOriginal();
+			resolver(escolhido);
+		};
+		modal.open();
+	});
+}
+
+/**
+ * O conteúdo inicial da nota. `null` significa "houve erro e já avisei".
+ *
+ * Template vazio é uma escolha legítima (nota em branco), então só o caminho QUEBRADO avisa: um
+ * template configurado que sumiu do vault é um erro dela querer saber, não algo a ignorar.
+ */
+async function lerTemplate(app: App, caminho: string | undefined): Promise<string | null> {
+	const alvo = caminho?.trim();
+	if (!alvo) return "";
+
+	const arquivo = app.vault.getAbstractFileByPath(alvo);
+	if (!(arquivo instanceof TFile)) {
+		new Notice(`Template não encontrado: ${alvo}. Configurações → Dash Cards.`);
+		return null;
+	}
+
+	try {
+		return await app.vault.read(arquivo);
+	} catch (e) {
+		console.warn("[dash-home] falha ao ler o template:", e);
+		new Notice(`Não consegui ler o template "${alvo}".`);
+		return null;
+	}
+}
+
+/**
+ * Manda o Templater processar a nota recém-criada, se ele estiver ativo.
+ *
+ * `overwrite_file_commands` reescreve o arquivo já existente resolvendo a sintaxe dele — é a API
+ * usada por quem integra com o Templater. Toda a chamada é defensiva porque é API INTERNA de outro
+ * plugin: se ele mudar de versão, a nota continua criada com o template bruto em vez de o clique
+ * inteiro falhar.
+ */
+async function processarComTemplater(app: App, arquivo: TFile, template: string | undefined): Promise<void> {
+	if (!template?.trim()) return;
+
+	const plugins = (app as unknown as {
+		plugins?: { plugins?: Record<string, unknown> };
+	}).plugins;
+	const templater = plugins?.plugins?.["templater-obsidian"] as
+		| { templater?: { overwrite_file_commands?: (arquivo: TFile, abrirNota?: boolean) => Promise<void> } }
+		| undefined;
+
+	const processar = templater?.templater?.overwrite_file_commands;
+	if (typeof processar !== "function") return;
+
+	try {
+		await processar.call(templater!.templater, arquivo, false);
+	} catch (e) {
+		console.warn("[dash-home] o Templater não conseguiu processar a nota:", e);
+		new Notice("A nota foi criada, mas o Templater não conseguiu processar o template.");
+	}
+}
+
+/**
+ * Troca `{{date}}` e `{{time}}` no nome sugerido, como o template nativo do Obsidian faz.
+ *
+ * Hora LOCAL, e não `toISOString()`: este converte para UTC, e quem está em Brasília depois das
+ * 21h ganharia a data de amanhã no nome do arquivo. Mesma razão do `dataDeHoje` (s15).
+ */
+function expandirData(texto: string): string {
+	const agora = new Date();
+	const pad = (n: number) => String(n).padStart(2, "0");
+	const data = `${agora.getFullYear()}-${pad(agora.getMonth() + 1)}-${pad(agora.getDate())}`;
+	const hora = `${pad(agora.getHours())}-${pad(agora.getMinutes())}`;
+	return texto.replace(/\{\{\s*date\s*\}\}/gi, data).replace(/\{\{\s*time\s*\}\}/gi, hora);
 }
 
 async function abrirNota(app: App, caminho: string, novaAba: boolean): Promise<void> {

@@ -1143,3 +1143,49 @@
 
 /* "Quadrado (só ícone)" não faz sentido num controle — ele PRECISA da largura para a caixa e para
  * o rótulo. A forma é ignorada de propósito, em vez de espremer o campo num quadrado inutilizável. */
+
+/* ── Sem molduras: só a linha entre um controle e o outro ───────────────────────────────────
+ *
+ * Pedido dela: "tira os contornos e coloca só uma linha divisória entre esses blocos".
+ *
+ * As molduras não são do plugin — vêm do tema (o Minimal declara `--setting-items-*`, e outros
+ * temas desenham a caixa direto). Como a origem varia, aqui neutralizamos as DUAS formas: as
+ * variáveis, para quem as usa, e as propriedades, para quem não usa.
+ *
+ * Escopo restrito ao painel do Dash Cards (`.dash-home-config`): o resto das configurações do
+ * Obsidian continua com a aparência que ela escolheu no tema.
+ *
+ * `!important` é necessário aqui: as regras do tema chegam com especificidade maior (e às vezes
+ * com `!important` próprio) do que qualquer seletor razoável deste arquivo. É o mesmo caso do
+ * cabeçalho do acordeão, mais acima. */
+.dash-home-config {
+	--setting-items-background: transparent;
+	--setting-items-border-width: 0;
+	--setting-items-margin: 0;
+	--setting-items-radius: 0;
+}
+
+.dash-home-config .setting-item {
+	background: transparent !important;
+	border: none !important;
+	border-radius: 0 !important;
+	box-shadow: none !important;
+	margin: 0 !important;
+	/* A linha divisória entre um controle e o outro — o que substitui a moldura. */
+	border-bottom: 1px solid var(--background-modifier-border) !important;
+	padding: 0.75em 0 !important;
+}
+
+/* O último de cada bloco não repete a linha: ela encostaria na borda do acordeão (que já tem a
+ * sua) e sairiam dois traços juntos. */
+.dash-home-config .setting-item:last-child {
+	border-bottom: none !important;
+}
+
+/* Os itens dentro de um botão ou de uma propriedade já vivem numa caixa própria e mais apertada;
+ * a linha ali dentro viraria ruído em vez de separação. */
+.dash-home-config .dash-home-config-botao .setting-item,
+.dash-home-config .dash-home-config-propriedade .setting-item {
+	border-bottom: none !important;
+	padding: 0.35em 0 !important;
+}

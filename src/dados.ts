@@ -24,7 +24,22 @@ import { normalizarEstiloBotao, type EstiloBotao } from "./estilo-botao";
  * s23 — ele SÓ preenchia uma propriedade, então ser um tipo à parte duplicava a mesma escolha em
  * dois lugares. Continua aceito na carga (e convertido) para não quebrar o que ela já montou.
  */
-export type TipoAcao = "nota" | "pasta" | "busca" | "comando" | "propriedade" | "campo";
+export type TipoAcao = "nota" | "pasta" | "busca" | "comando" | "propriedade" | "campo" | "criar";
+
+/** Onde a nota criada por um botão "criar" é salva, e a partir de qual template. */
+export interface CriarNota {
+	/** Caminho do arquivo de template ("Templates/Reunião.md"). Vazio = nota em branco. */
+	template: string;
+	/** Pasta de destino. Vazio = a raiz do vault. */
+	pasta: string;
+	/**
+	 * Nome sugerido na caixinha do clique. Aceita `{{date}}` e `{{time}}`.
+	 *
+	 * É só a SUGESTÃO: ela sempre confirma (e pode trocar) antes de a nota ser criada — decisão
+	 * dela, porque o mesmo botão serve para "Cliente Acme" e para uma nota do dia.
+	 */
+	nomeSugerido?: string;
+}
 
 /** O formato da caixa de digitação, na operação "digitar". */
 export type TipoCampo = "numero" | "texto" | "data";
@@ -132,6 +147,8 @@ export interface Botao {
 	 * montagem; aqui o valor é digitado na hora, e o que se configura é só o alvo e o formato.
 	 */
 	campo?: CampoEntrada;
+	/** Template e destino da nota nova, quando `tipo === "criar"`. */
+	criar?: CriarNota;
 	/**
 	 * Aparência só deste botão; o que não define, herda do quadrante e depois do global.
 	 * É a terceira camada da herança — ver `estilo-botao.ts`.
@@ -517,6 +534,7 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 				botao.estilo = normalizarEstiloBotao(botao.estilo);
 				botao.propriedades = normalizarPropriedades(botao.propriedades);
 				botao.campo = normalizarCampo(botao.campo);
+				botao.criar = normalizarCriar(botao.criar);
 				migrarCampoParaOperacao(botao);
 			}
 		}
@@ -525,7 +543,7 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 	return dados;
 }
 
-const TIPOS_VALIDOS = new Set<string>(["nota", "pasta", "busca", "comando", "propriedade", "campo"]);
+const TIPOS_VALIDOS = new Set<string>(["nota", "pasta", "busca", "comando", "propriedade", "campo", "criar"]);
 
 const OPERACOES_VALIDAS = new Set<string>(["definir", "alternar", "escolher", "digitar", "interruptor"]);
 const TIPOS_VALOR_VALIDOS = new Set<string>(["texto", "numero", "booleano", "data", "vazio"]);
@@ -558,6 +576,27 @@ export function normalizarCampo(valor: unknown): CampoEntrada | undefined {
 		campo.placeholder = bruto.placeholder;
 	}
 	return campo;
+}
+
+/**
+ * Blindagem do "criar nota" vindo do data.json.
+ *
+ * Aqui NADA é obrigatório, ao contrário do campo e das propriedades: sem template a nota nasce em
+ * branco, e sem pasta ela vai para a raiz. Os dois são escolhas legítimas, então o objeto sobrevive
+ * mesmo vazio — o que não pode é virar `{}` com chaves de tipo errado.
+ */
+export function normalizarCriar(valor: unknown): CriarNota | undefined {
+	if (!valor || typeof valor !== "object") return undefined;
+	const bruto = valor as Partial<CriarNota>;
+
+	const criar: CriarNota = {
+		template: typeof bruto.template === "string" ? bruto.template.trim() : "",
+		pasta: typeof bruto.pasta === "string" ? bruto.pasta.trim() : "",
+	};
+	if (typeof bruto.nomeSugerido === "string" && bruto.nomeSugerido.trim()) {
+		criar.nomeSugerido = bruto.nomeSugerido;
+	}
+	return criar;
 }
 
 /**
@@ -743,6 +782,7 @@ function clonarDashboard(d: Dashboard): Dashboard {
 				...b,
 				estilo: b.estilo ? { ...b.estilo } : undefined,
 				campo: b.campo ? { ...b.campo } : undefined,
+				criar: b.criar ? { ...b.criar } : undefined,
 				propriedades: b.propriedades?.map((p) => ({ ...p })),
 			})),
 		})),
@@ -859,6 +899,7 @@ export function duplicarQuadrante(dashboard: Dashboard, indice: number): Quadran
 			// nenhum homônimo ao lado — e é o rótulo que aparece no dashboard renderizado.
 			estilo: b.estilo ? { ...b.estilo } : undefined,
 			campo: b.campo ? { ...b.campo } : undefined,
+				criar: b.criar ? { ...b.criar } : undefined,
 			// `opcoes` é array: sem a cópia, editar a lista de uma mudaria a da outra.
 			propriedades: b.propriedades?.map((p) => ({ ...p, id: novoId("p"), opcoes: p.opcoes ? [...p.opcoes] : undefined })),
 		})),
@@ -894,6 +935,7 @@ export function duplicarBotao(quadrante: Quadrante, indice: number): Botao | und
 		texto: `${original.texto} (cópia)`,
 		estilo: original.estilo ? { ...original.estilo } : undefined,
 		campo: original.campo ? { ...original.campo } : undefined,
+		criar: original.criar ? { ...original.criar } : undefined,
 		propriedades: original.propriedades?.map((p) => ({
 			...p,
 			id: novoId("p"),

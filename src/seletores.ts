@@ -1,5 +1,8 @@
 import {
 	FuzzySuggestModal,
+	Modal,
+	Notice,
+	Setting,
 	TFile,
 	TFolder,
 	getIconIds,
@@ -379,5 +382,68 @@ export class ModalEscolherComando extends FuzzySuggestModal<Command> {
 
 	onChooseItem(comando: Command): void {
 		this.onEscolher(comando.id, comando.name);
+	}
+}
+
+/**
+ * A caixinha que pergunta o nome da nota nova, no clique de um botão "criar".
+ *
+ * Modal simples (não `FuzzySuggestModal`): aqui não há lista para escolher, ela DIGITA. O nome
+ * sugerido vem selecionado, então aceitar no Enter é um gesto só — e trocar também, porque
+ * digitar por cima substitui a seleção.
+ *
+ * Vive aqui, e não no painel, porque quem o abre é o dashboard renderizado.
+ */
+export class ModalNomeDaNotaNova extends Modal {
+	private valor: string;
+
+	constructor(
+		app: App,
+		sugestao: string,
+		private pasta: string,
+		private onConfirmar: (nome: string) => void,
+	) {
+		super(app);
+		this.valor = sugestao;
+	}
+
+	onOpen(): void {
+		this.titleEl.setText("Nome da nota");
+
+		// Dizer ONDE a nota vai parar: o destino foi configurado no painel e ela não o vê aqui.
+		this.contentEl.createEl("p", {
+			cls: "dash-home-config-vazio",
+			text: this.pasta ? `Será criada em "${this.pasta}".` : "Será criada na raiz do vault.",
+		});
+
+		const confirmar = () => {
+			const limpo = this.valor.trim();
+			if (!limpo) {
+				new Notice("Dê um nome para a nota.");
+				return;
+			}
+			this.onConfirmar(limpo);
+			this.close();
+		};
+
+		new Setting(this.contentEl).setName("Nome").addText((texto) => {
+			texto.setValue(this.valor).onChange((v) => (this.valor = v));
+			texto.inputEl.addEventListener("keydown", (evento) => {
+				if (evento.key === "Enter") {
+					evento.preventDefault();
+					confirmar();
+				}
+			});
+			// Selecionado (não só focado): aceitar a sugestão é Enter, trocá-la é digitar por cima.
+			window.setTimeout(() => texto.inputEl.select(), 0);
+		});
+
+		new Setting(this.contentEl)
+			.addButton((b) => b.setButtonText("Cancelar").onClick(() => this.close()))
+			.addButton((b) => b.setButtonText("Criar").setCta().onClick(confirmar));
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
 	}
 }

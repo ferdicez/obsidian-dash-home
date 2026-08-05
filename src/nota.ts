@@ -159,6 +159,17 @@ export function gerarBloco(
 				}
 			}
 
+			// O template e o destino do botão "criar" — sem eles o bloco diria "tipo: criar" sem
+			// dizer o que é criado nem onde (a armadilha nº 8, que já mordeu quatro vezes).
+			if (botao.tipo === "criar" && botao.criar) {
+				linhas.push(`        criar:`);
+				linhas.push(`          template: ${aspas(botao.criar.template)}`);
+				linhas.push(`          pasta: ${aspas(botao.criar.pasta)}`);
+				if (botao.criar.nomeSugerido) {
+					linhas.push(`          nome: ${aspas(botao.criar.nomeSugerido)}`);
+				}
+			}
+
 			// A camada de cima da herança: só o que ESTE botão define, não o que ele herda.
 			const entradasDoBotao = entradasDefinidas(botao.estilo);
 			if (entradasDoBotao.length > 0) {

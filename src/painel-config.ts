@@ -645,7 +645,14 @@ export class PainelConfigDashCards extends PluginSettingTab {
 
 			const secaoConteudo = criarAcordeao(corpo, {
 				chave: `${quadrante.id}:conteudo`,
-				titulo: ehMarkdown ? "Conteúdo" : quadrante.conteudo === "ambos" ? "Texto e botões" : "Botões",
+				// O título diz o que a seção contém. O separador caía no `else` e virava "Botões",
+			// num quadrante que não tem botão nenhum — daí ele entrar junto com o markdown.
+			titulo:
+				ehMarkdown || ehSeparador
+					? "Conteúdo"
+					: quadrante.conteudo === "ambos"
+						? "Texto e botões"
+						: "Botões",
 				aninhado: true,
 				abertoPorPadrao: true,
 			});
@@ -1672,6 +1679,10 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			this.desenharPropriedades(linha, botao);
 		}
 
+		if (botao.tipo === "criar") {
+			this.desenharCriarNota(linha, botao);
+		}
+
 		// Terceira linha: a aparência SÓ deste botão — a camada de cima da herança. É o que
 		// permite um botão verde e um vermelho no mesmo quadrante.
 		const secaoEstilo = criarAcordeao(linha, {
@@ -1711,6 +1722,7 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			drop.addOption("pasta", "Abrir pasta");
 			drop.addOption("busca", "Buscar");
 			drop.addOption("comando", "Rodar comando");
+			drop.addOption("criar", "Criar nota de um template");
 			// "campo" NÃO é oferecido: virou a operação "digitar" dentro de "propriedade" (s23).
 			// O valor antigo ainda existe no tipo para a carga poder migrá-lo.
 			drop.addOption("propriedade", "Alterar propriedades");
@@ -1731,6 +1743,13 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			// O alvo é sempre a nota aberta, então não há destino a escolher — só a lista de
 			// mudanças, que vai logo abaixo em `desenharPropriedades`.
 			destino.setDesc("Altera a nota que estiver aberta no momento do clique.");
+			return;
+		}
+
+		if (botao.tipo === "criar") {
+			// O template e a pasta ficam logo abaixo, em `desenharCriarNota` — não há um destino
+			// único a escolher aqui.
+			destino.setDesc("Cria uma nota nova e a abre. O nome é pedido no clique.");
 			return;
 		}
 
@@ -1778,6 +1797,91 @@ export class PainelConfigDashCards extends PluginSettingTab {
 				await salvar(id);
 			}).open();
 		}
+	}
+
+	/**
+	 * O botão que cria uma nota: de qual template, em qual pasta, com que nome sugerido.
+	 *
+	 * Template e pasta são escolhidos por SELETOR, nunca digitados — é a regra do plugin desde a
+	 * s3 (acertar uma string de caminho à mão é exatamente o que ele evita). O nome sugerido, esse
+	 * sim, é texto livre, porque não existe lista de nomes futuros para escolher.
+	 */
+	private desenharCriarNota(el: HTMLElement, botao: Botao): void {
+		const cfg = (botao.criar ??= { template: "", pasta: "" });
+
+		new Setting(el)
+			.setName("Template")
+			.setDesc(cfg.template || "Nenhum — a nota nasce em branco.")
+			.addButton((b) => {
+				b.setButtonText(cfg.template ? "Trocar" : "Escolher…");
+				b.setTooltip("Escolher a nota que serve de template");
+				b.onClick(() => {
+					new ModalEscolherNota(this.app, async (caminho) => {
+						cfg.template = caminho;
+						await this.aplicar();
+					}).open();
+				});
+			})
+			.addExtraButton((b) =>
+				b
+					.setIcon("x")
+					.setTooltip("Sem template (nota em branco)")
+					.setDisabled(!cfg.template)
+					.onClick(async () => {
+						cfg.template = "";
+						await this.aplicar();
+					}),
+			);
+
+		new Setting(el)
+			.setName("Salvar em")
+			.setDesc(cfg.pasta || "Raiz do vault.")
+			.addButton((b) => {
+				b.setButtonText(cfg.pasta ? "Trocar" : "Escolher…");
+				b.setTooltip("Escolher a pasta de destino");
+				b.onClick(() => {
+					new ModalEscolherPasta(this.app, async (caminho) => {
+						cfg.pasta = caminho;
+						await this.aplicar();
+					}).open();
+				});
+			})
+			.addExtraButton((b) =>
+				b
+					.setIcon("x")
+					.setTooltip("Salvar na raiz do vault")
+					.setDisabled(!cfg.pasta)
+					.onClick(async () => {
+						cfg.pasta = "";
+						await this.aplicar();
+					}),
+			);
+
+		new Setting(el)
+			.setName("Nome sugerido")
+			.setDesc("Aparece já preenchido na caixinha do clique. Aceita {{date}} e {{time}}.")
+			.addText((texto) =>
+				texto
+					.setPlaceholder("Ex.: Reunião {{date}}")
+					.setValue(cfg.nomeSugerido ?? "")
+					.onChange((valor) => {
+						cfg.nomeSugerido = valor;
+						this.salvarDigitacao();
+					}),
+			);
+
+		// O Templater é opcional, mas muda o que o template faz — e é melhor ela saber disto ao
+		// montar do que descobrir no primeiro clique.
+		const temTemplater = !!(this.app as unknown as {
+			plugins?: { plugins?: Record<string, unknown> };
+		}).plugins?.plugins?.["templater-obsidian"];
+
+		el.createDiv({
+			cls: "dash-home-config-vazio",
+			text: temTemplater
+				? "O Templater está ativo: a sintaxe dele (<% tp… %>) é processada na nota nova."
+				: "O Templater não está ativo — o template é copiado como está, sem processar sintaxe.",
+		});
 	}
 
 	/** A dica da caixa vazia, e o aviso do que o formato escolhido grava. */
