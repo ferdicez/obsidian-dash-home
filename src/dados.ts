@@ -621,7 +621,132 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 		}
 	}
 
+	// Depois de tudo normalizado: os botões soltos que ela montou antes da biblioteca viram botões
+	// salvos e vinculados. Roda por último porque compara botões já limpos — comparar antes faria
+	// dois botões idênticos parecerem diferentes por causa de um campo que a normalização removeria.
+	migrarBotoesParaBiblioteca(dados);
+
 	return dados;
+}
+
+/**
+ * Converte todo botão solto dos quadrantes em um botão SALVO, vinculado.
+ *
+ * Existe porque o quadrante deixou de poder criar botão próprio (pedido dela na s28): sem isto, os
+ * botões que ela já montou seriam os únicos do vault impossíveis de editar — o editor sumiu do
+ * quadrante, e eles não estariam na biblioteca para serem editados de lá.
+ *
+ * **Botões iguais viram UM só** (escolha dela). Duas consequências que valem o cuidado:
+ *
+ * - A biblioteca não nasce com vinte "Início" repetidos, um por card.
+ * - Editar esse "Início" passa a mudar os vinte cards de uma vez — que é o ponto do vinculado.
+ *
+ * A igualdade é por CONTEÚDO (`assinaturaDoBotao`), incluindo a aparência: dois botões que só
+ * diferem na cor continuam separados, senão a migração mudaria o visual do dashboard dela.
+ */
+function migrarBotoesParaBiblioteca(dados: DadosDashHome): void {
+	const salvos = (dados.botoesSalvos ??= []);
+
+	// Os moldes que já existem entram no índice: se ela cadastrou "Início" na biblioteca e tem um
+	// botão solto igual, o solto se liga ao molde dela em vez de criar um segundo idêntico.
+	const porAssinatura = new Map<string, BotaoSalvo>();
+	for (const salvo of salvos) {
+		const chave = assinaturaDoBotao(salvo);
+		if (!porAssinatura.has(chave)) porAssinatura.set(chave, salvo);
+	}
+
+	for (const dash of dados.dashboards) {
+		for (const quad of dash.quadrantes) {
+			for (const botao of quad.botoes) {
+				// Já vinculado: nada a fazer. (Vínculo quebrado também é pulado — o id dele pode
+				// voltar a existir, e converter aqui criaria um molde duplicado.)
+				if (botao.salvoId) continue;
+
+				const chave = assinaturaDoBotao(botao);
+				let molde = porAssinatura.get(chave);
+
+				if (!molde) {
+					molde = {
+						id: novoId("s"),
+						texto: botao.texto,
+						icone: botao.icone,
+						tipo: botao.tipo,
+						destino: botao.destino,
+						// Cópia profunda: sem ela, o molde e o botão compartilhariam os objetos, e
+						// editar um mexeria no outro em silêncio (a regra de sempre).
+						propriedades: botao.propriedades?.map((p) => ({
+							...p,
+							id: novoId("p"),
+							opcoes: p.opcoes ? [...p.opcoes] : undefined,
+						})),
+						criar: botao.criar ? { ...botao.criar } : undefined,
+						// A aparência vai junto (escolha dela): assim nada muda de visual no
+						// dashboard depois da migração — só o lugar de editar mudou.
+						estilo: botao.estilo ? { ...botao.estilo } : undefined,
+					};
+					salvos.push(molde);
+					porAssinatura.set(chave, molde);
+				}
+
+				botao.salvoId = molde.id;
+			}
+		}
+	}
+}
+
+/**
+ * A identidade de um botão pelo CONTEÚDO — o que decide se dois viram o mesmo molde.
+ *
+ * Inclui a aparência de propósito: dois botões que só diferem na cor precisam continuar dois, senão
+ * a migração mudaria o visual do dashboard dela sem pedir.
+ *
+ * `JSON.stringify` de uma lista em ORDEM FIXA (e não do objeto inteiro): a ordem das chaves de um
+ * objeto varia conforme ele foi montado, e dois botões iguais teriam assinaturas diferentes.
+ */
+function assinaturaDoBotao(botao: {
+	texto?: string;
+	icone?: string;
+	tipo?: string;
+	destino?: string;
+	propriedades?: MudancaPropriedade[];
+	criar?: CriarNota;
+	estilo?: EstiloBotao;
+}): string {
+	const props = (botao.propriedades ?? []).map((p) => [
+		p.nome,
+		p.operacao,
+		p.tipo,
+		p.valor,
+		p.valor2 ?? "",
+		// A lista entra como LISTA, e não juntada por um separador: qualquer separador
+		// escolhido poderia aparecer dentro de uma opção digitada por ela, e aí duas listas
+		// diferentes gerariam a mesma assinatura — dois botões distintos virariam um molde só.
+		p.opcoes ?? [],
+		p.formato ?? "",
+		p.dica ?? "",
+	]);
+
+	const criar = botao.criar
+		? [botao.criar.template, botao.criar.pasta, botao.criar.nomeSugerido ?? ""]
+		: null;
+
+	// O estilo é um objeto de chaves opcionais: as entradas são ordenadas por nome para a
+	// assinatura não depender da ordem em que os campos foram gravados.
+	const estilo = botao.estilo
+		? Object.entries(botao.estilo)
+				.filter(([, v]) => v !== undefined)
+				.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+		: null;
+
+	return JSON.stringify([
+		botao.texto ?? "",
+		botao.icone ?? "",
+		botao.tipo ?? "nota",
+		botao.destino ?? "",
+		props,
+		criar,
+		estilo,
+	]);
 }
 
 const TIPOS_VALIDOS = new Set<string>(["nota", "pasta", "busca", "comando", "propriedade", "campo", "criar"]);
@@ -887,6 +1012,29 @@ export function usarBotaoSalvo(quadrante: Quadrante, salvo: BotaoSalvo): Botao {
 }
 
 /**
+ * Troca qual botão salvo este botão do card usa, no LUGAR.
+ *
+ * No lugar (em vez de remover e adicionar) porque a posição dele no card é escolha dela: recriar o
+ * botão o jogaria para o fim da lista, e ela teria que reordenar de novo.
+ *
+ * O retrato é atualizado junto, pelo motivo de sempre: é o que sobra se o molde novo for excluído.
+ */
+export function trocarBotaoSalvo(botao: Botao, salvo: BotaoSalvo): void {
+	botao.salvoId = salvo.id;
+	botao.texto = salvo.texto;
+	botao.icone = salvo.icone;
+	botao.tipo = salvo.tipo;
+	botao.destino = salvo.destino;
+	botao.propriedades = salvo.propriedades?.map((p) => ({
+		...p,
+		id: novoId("p"),
+		opcoes: p.opcoes ? [...p.opcoes] : undefined,
+	}));
+	botao.criar = salvo.criar ? { ...salvo.criar } : undefined;
+	botao.estilo = salvo.estilo ? { ...salvo.estilo } : undefined;
+}
+
+/**
  * Corta o vínculo: o botão vira independente, com os valores que o molde tem AGORA.
  *
  * Sem isto, um botão vinculado seria uma prisão — ela não poderia mudar um único dashboard sem
@@ -1110,6 +1258,13 @@ export function criarQuadrante(dashboard: Dashboard, titulo: string): Quadrante 
 	return quadrante;
 }
 
+/**
+ * Cria um botão solto num quadrante.
+ *
+ * **Não é mais usado pelo painel** (s28): o quadrante só recebe botões da biblioteca, via
+ * `usarBotaoSalvo`. Continua exportada porque o modelo aceita botão solto — é o que um botão
+ * desvinculado vira, e o que a carga de um data.json antigo encontra antes de migrar.
+ */
 export function criarBotao(quadrante: Quadrante, texto: string): Botao {
 	const botao: Botao = {
 		id: novoId("b"),

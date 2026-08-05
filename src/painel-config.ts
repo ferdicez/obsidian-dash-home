@@ -3,20 +3,19 @@ import { abrirAcordeao, criarAcordeao } from "./acordeao";
 import {
 	CORES,
 	botaoResolvido,
-	criarBotao,
 	criarBotaoSalvo,
 	criarDashboard,
 	criarMudancaPropriedade,
 	criarQuadrante,
 	dashboardAtivo,
 	dashboardQueUsaNota,
-	desvincularBotao,
 	duplicarBotao,
 	duplicarBotaoSalvo,
 	duplicarQuadrante,
 	ehControle,
 	ehHex,
 	removerBotaoSalvo,
+	trocarBotaoSalvo,
 	usarBotaoSalvo,
 	usosDoBotaoSalvo,
 	type BotaoSalvo,
@@ -563,7 +562,7 @@ export class PainelConfigDashCards extends PluginSettingTab {
 		const secao = criarAcordeao(el, {
 			chave: "secao:biblioteca",
 			titulo: "Botões salvos",
-			descricao: "Pré-configure botões aqui e só selecione na hora de montar os quadrantes.",
+			descricao: "Todo botão do vault é criado aqui. Nos cards, você só escolhe qual usar.",
 			resumo: salvos.length === 0 ? "nenhum" : salvos.length === 1 ? "1 botão" : `${salvos.length} botões`,
 		});
 
@@ -1019,36 +1018,47 @@ export class PainelConfigDashCards extends PluginSettingTab {
 				if (ehMarkdown) return;
 
 				if (quadrante.conteudo === "ambos") {
-					// Um cabeçalho para separar as duas metades: sem ele o "+ Novo botão" apareceria
-					// logo abaixo do campo de texto, sem dizer que começou outra coisa.
+					// Um cabeçalho para separar as duas metades: sem ele o botão de adicionar
+					// apareceria logo abaixo do campo de texto, sem dizer que começou outra coisa.
 					corpoConteudo.createEl("h4", { text: "Botões" });
 				}
 
+				const salvos = this.plugin.dados.botoesSalvos ?? [];
+
 				if (quadrante.botoes.length === 0) {
-					corpoConteudo.createDiv({ cls: "dash-home-config-vazio", text: "Nenhum botão ainda." });
+					// O estado vazio é um convite a agir, então diz o que fazer — e o que fazer mudou:
+					// não se cria botão aqui, escolhe-se um da tela "Botões".
+					corpoConteudo.createDiv({
+						cls: "dash-home-config-vazio",
+						text:
+							salvos.length === 0
+								? "Nenhum botão ainda. Cadastre um na tela “Botões” e depois escolha-o aqui."
+								: "Nenhum botão ainda. Use “Adicionar botão” para escolher um dos salvos.",
+					});
 				}
 				quadrante.botoes.forEach((botao, i) => {
 					this.desenharBotao(corpoConteudo, quadrante, botao, i);
 				});
 				const acoesLista = new Setting(corpoConteudo);
 
-				// PRIMEIRO na fileira, e em destaque: é o caminho que ela pediu — não escolher opção
-				// nenhuma na hora de montar o card, só selecionar o que já está cadastrado.
-				const salvos = this.plugin.dados.botoesSalvos ?? [];
+				// O ÚNICO jeito de pôr um botão num card: escolher um salvo. Era o que ela pediu —
+				// "nunca vai existir a possibilidade de eu criar um novo botão na parte do dashboard".
 				acoesLista.addButton((botao) =>
 					botao
-						.setButtonText("Usar botão salvo")
+						.setButtonText("Adicionar botão")
 						.setCta()
 						.setTooltip(
 							salvos.length === 0
-								? "Cadastre botões em “Botões salvos”, no topo do painel"
+								? "Cadastre botões na tela “Botões”"
 								: "Escolher um dos botões já configurados",
 						)
 						.onClick(() => {
 							if (salvos.length === 0) {
-								new Notice("Nenhum botão salvo ainda. Cadastre em “Botões salvos”, no topo do painel.");
+								// Leva para onde o botão é criado, em vez de só avisar que não há nenhum.
+								new Notice("Nenhum botão salvo ainda. Cadastre um aqui e depois escolha-o no card.");
+								this.tela = "botoes";
 								abrirAcordeao("secao:biblioteca");
-								this.atualizar();
+								this.atualizar(true);
 								return;
 							}
 							new ModalEscolherBotaoSalvo(this.app, salvos, async (salvo) => {
@@ -1058,33 +1068,10 @@ export class PainelConfigDashCards extends PluginSettingTab {
 						}),
 				);
 
-				acoesLista.addButton((botao) =>
-					botao.setButtonText("+ Novo botão").onClick(async () => {
-						criarBotao(quadrante, "Novo botão");
-						await this.aplicar();
-					}),
-				);
-
-				// Duplicar o último também aqui, e não só na fileira de cada botão: o momento em que
-				// ela sente falta é ao ADICIONAR o próximo, com a mão já neste canto da tela. O
-				// último é o alvo certo porque é o que ela acabou de montar — para copiar outro, o
-				// ícone da própria linha dele continua ali.
-				if (quadrante.botoes.length > 0) {
-					// Resolvido: num botão vinculado o `texto` guardado é o retrato de quando ele foi
-					// usado, e a dica mostraria um nome antigo se o molde tiver sido renomeado depois.
-					const ultimo = botaoResolvido(quadrante.botoes[quadrante.botoes.length - 1], salvos);
-					acoesLista.addButton((botao) =>
-						botao
-							.setButtonText("Duplicar o último")
-							.setTooltip(`Copia "${ultimo.texto}" com todos os ajustes`)
-							.onClick(async () => {
-								// Sem abrir acordeão: o botão do quadrante não tem mais seção de
-								// aparência para expandir (ela vive na tela "Botões").
-								duplicarBotao(quadrante, quadrante.botoes.length - 1);
-								await this.aplicar();
-							}),
-					);
-				}
+			// Não há mais "+ Novo botão" nem "Duplicar o último": o quadrante NÃO cria botão
+				// próprio (decisão dela, s28). Todo botão vem da biblioteca, e é lá que se edita —
+				// um segundo lugar de criar botão era exatamente o que fazia a mesma coisa existir em
+				// dois formatos diferentes.
 			});
 
 			// A aparência dos botões deste quadrante. Em acordeão próprio, e não dentro de "Cor e
@@ -1987,45 +1974,52 @@ export class PainelConfigDashCards extends PluginSettingTab {
 
 			topo.addButton((b) =>
 				b
-					.setButtonText("Editar o salvo")
-					.setTooltip("Abre este botão na biblioteca — a alteração vale em todos os cards que o usam")
+					.setButtonText("Editar")
+					.setTooltip("Abre este botão na tela “Botões” — a alteração vale em todos os cards que o usam")
 					.onClick(() => {
+						// Leva para a tela onde ele se edita, já com a seção aberta. Sem isso ela
+						// teria que trocar de aba e procurar o botão na lista.
+						this.tela = "botoes";
 						abrirAcordeao("secao:biblioteca");
 						abrirAcordeao(`${molde.id}:salvo`);
-						this.atualizar();
+						this.atualizar(true);
 					}),
 			);
-			topo.addExtraButton((b) =>
+			topo.addButton((b) =>
 				b
-					.setIcon("unlink")
-					.setTooltip("Desvincular: vira um botão próprio deste card, livre para editar")
-					.onClick(async () => {
-						desvincularBotao(botao, salvos);
-						await this.aplicar();
+					.setButtonText("Trocar")
+					.setTooltip("Usar outro botão salvo no lugar deste")
+					.onClick(() => {
+						new ModalEscolherBotaoSalvo(this.app, salvos, async (novo) => {
+							// Troca o vínculo no lugar, preservando a POSIÇÃO do botão na lista —
+							// remover e adicionar o jogaria para o fim do card.
+							trocarBotaoSalvo(botao, novo);
+							await this.aplicar();
+						}).open();
 					}),
 			);
 		} else {
-			topo.addText((texto) =>
-				texto
-					.setPlaceholder("Nome do botão")
-					.setValue(botao.texto)
-					.onChange((valor) => {
-						botao.texto = valor;
-						this.salvarDigitacao();
+			// Sem molde: um botão de antes da biblioteca cujo vínculo não resolve (molde excluído
+			// por fora, ou data.json editado à mão). A migração da carga cobre o caso normal, então
+			// aqui só resta oferecer a saída — trocar por um salvo — em vez de um editor que não
+			// existe mais.
+			linha.addClass("dash-home-config-botao-vinculado");
+			const rotulo = topo.nameEl.createDiv({ cls: "dash-home-config-vinculo" });
+			if (botao.icone) setIcon(rotulo.createSpan({ cls: "dash-home-config-vinculo-icone" }), botao.icone);
+			rotulo.createSpan({ cls: "dash-home-config-vinculo-nome", text: botao.texto || "Sem nome" });
+			topo.setDesc("Este botão não está na sua lista de botões salvos. Continua funcionando; escolha um salvo para trocá-lo.");
+
+			topo.addButton((b) =>
+				b
+					.setButtonText("Trocar por um salvo")
+					.setCta()
+					.onClick(() => {
+						new ModalEscolherBotaoSalvo(this.app, salvos, async (novo) => {
+							trocarBotaoSalvo(botao, novo);
+							await this.aplicar();
+						}).open();
 					}),
 			);
-
-			topo.addButton((b) => {
-				if (botao.icone) b.setIcon(botao.icone);
-				else b.setButtonText("Ícone");
-				b.setTooltip("Escolher ícone");
-				b.onClick(() => {
-					new ModalEscolherIcone(this.app, botao.texto, botao.icone, async (icone) => {
-						botao.icone = icone;
-						await this.aplicar();
-					}).open();
-				});
-			});
 		}
 
 		topo.addExtraButton((b) =>
@@ -2069,46 +2063,13 @@ export class PainelConfigDashCards extends PluginSettingTab {
 				}),
 		);
 
-		// Vinculado: a ação e a aparência moram no molde, então o editor daqui para por aqui. Mostrar
-		// os controles mexendo no objeto local seria pior que não mostrar — eles pareceriam funcionar
-		// e não teriam efeito nenhum no dashboard, porque quem desenha lê o molde.
+		// E acabou: a linha do botão no quadrante é só ISTO — qual botão é, e onde ele fica no card.
+		// Nome, ícone, ação, propriedades e aparência moram todos na tela "Botões" (decisão dela,
+		// s28). Um editor aqui mexeria num objeto que nem é lido na hora de desenhar, porque quem
+		// desenha resolve o vínculo e lê o molde.
 		//
-		// Mover, duplicar e excluir continuam acima de propósito: são operações do CARD (a posição do
+		// Mover, duplicar e excluir ficam acima de propósito: são operações do CARD (a posição do
 		// botão nesta lista), não do conteúdo do botão.
-		if (molde) return;
-
-		this.desenharDestino(linha, botao);
-
-		if (botao.tipo === "propriedade") {
-			this.desenharPropriedades(linha, botao);
-		}
-
-		if (botao.tipo === "criar") {
-			this.desenharCriarNota(linha, botao);
-		}
-
-		// A aparência de um botão individual NÃO se edita aqui — foi decisão dela: ou o botão já
-		// nasce certo (configurado na tela "Botões"), ou o QUADRANTE INTEIRO é sobreposto, no
-		// acordeão "Aparência dos botões" do card. Um terceiro lugar de ajustar a mesma coisa era
-		// justamente o que confundia.
-		//
-		// A camada do botão continua existindo no modelo (`botao.estilo`): o que sai é o editor
-		// daqui. Um botão que já tinha ajuste próprio segue desenhado com ele — apagá-lo por causa
-		// de uma mudança de painel perderia trabalho dela (a regra da s20).
-		if (this.temEstiloProprio(botao.estilo)) {
-			const aviso = new Setting(linha)
-				.setClass("dash-home-config-botao-destino")
-				.setDesc("Este botão tem ajustes de aparência próprios, de uma versão anterior.");
-			aviso.addExtraButton((b) =>
-				b
-					.setIcon("rotate-ccw")
-					.setTooltip("Descartar e seguir o quadrante")
-					.onClick(async () => {
-						botao.estilo = {};
-						await this.aplicar();
-					}),
-			);
-		}
 	}
 
 	/**
@@ -2994,7 +2955,7 @@ class ModalEscolherBotaoSalvo extends Modal {
 		if (this.salvos.length === 0) {
 			this.contentEl.createEl("p", {
 				cls: "dash-home-config-vazio",
-				text: "Nenhum botão salvo ainda. Cadastre em “Botões salvos”, no topo do painel.",
+				text: "Nenhum botão salvo ainda. Cadastre um na tela “Botões”.",
 			});
 			return;
 		}
