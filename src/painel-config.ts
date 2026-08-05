@@ -353,10 +353,13 @@ export class PainelConfigDashCards extends PluginSettingTab {
 		// Dois acordeões irmãos, no estilo do painel do My Tasks: "Quadrantes" (com um acordeão
 		// por quadrante dentro) e "Aparência". Sem moldura em volta — só a linha divisória e o
 		// recuo do conteúdo dão a leitura de hierarquia.
+		// O resumo diz "3 quadrantes", e não só "3": um número solto ao lado de um título obriga a
+		// adivinhar do que ele é. Custa duas palavras e poupa a dúvida.
+		const total = dashboard.quadrantes.length;
 		const secaoQuadrantes = criarAcordeao(el, {
 			chave: `${dashboard.id}:quadrantes`,
 			titulo: "Quadrantes",
-			resumo: `${dashboard.quadrantes.length}`,
+			resumo: total === 0 ? "nenhum" : total === 1 ? "1 quadrante" : `${total} quadrantes`,
 			abertoPorPadrao: true,
 		});
 
@@ -386,6 +389,18 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			);
 		});
 
+		// O mesmo botão no CABEÇALHO da seção, e não só no fim da lista: com dez quadrantes, chegar
+		// ao "+ Novo" exigia rolar por todos eles. O acordeão ignora cliques em `-acoes`, então o
+		// botão não abre/fecha a seção ao ser usado.
+		const acoesQuadrantes = secaoQuadrantes.cabecalho.createDiv({ cls: "dash-home-acordeao-acoes" });
+		this.botaoIcone(acoesQuadrantes, "plus", "Novo quadrante", true, async () => {
+			const novo = criarQuadrante(dashboard, "Novo quadrante");
+			abrirAcordeao(`${dashboard.id}:quadrantes`);
+			abrirAcordeao(`${novo.id}:quadrante`);
+			abrirAcordeao(`${novo.id}:conteudo`);
+			await this.aplicar();
+		});
+
 		const dados = this.plugin.dados;
 
 		const secaoAparencia = criarAcordeao(el, {
@@ -397,9 +412,53 @@ export class PainelConfigDashCards extends PluginSettingTab {
 		secaoAparencia.sePreenchido((corpo) => this.desenharAparencia(corpo, dados));
 	}
 
+	/**
+	 * A aparência global — o que vale para todos os quadrantes, salvo o que cada um sobrescrever.
+	 *
+	 * Dividida em três acordeões aninhados porque eram ~14 controles corridos misturando três
+	 * assuntos: o que aparece no card, a moldura dele, e os botões. Uma parede de controles obriga
+	 * a ler todos para achar um; três títulos deixam a busca ser visual.
+	 */
 	private desenharAparencia(el: HTMLElement, dados: DadosDashHome): void {
+		const secaoCard = criarAcordeao(el, {
+			chave: "aparencia:card",
+			titulo: "O que aparece no card",
+			aninhado: true,
+			abertoPorPadrao: true,
+		});
+		secaoCard.sePreenchido((corpo) => this.desenharAparenciaCard(corpo, dados));
+
+		const secaoMoldura = criarAcordeao(el, {
+			chave: "aparencia:moldura",
+			titulo: "Moldura e espaçamento",
+			descricao: "A barra colorida, os cantos e o respiro interno de cada card.",
+			aninhado: true,
+		});
+		secaoMoldura.sePreenchido((corpo) => this.desenharAparenciaMoldura(corpo, dados));
+
+		const secaoBotoes = criarAcordeao(el, {
+			chave: "aparencia:botoes",
+			titulo: "Botões",
+			descricao: "A base da herança: vale para todo botão que não tiver ajuste próprio.",
+			aninhado: true,
+		});
+
+		secaoBotoes.sePreenchido((corpo) => {
+			this.desenharEstiloBotao(corpo, {
+				alvo: (dados.estiloBotaoGlobal ??= {}),
+				camada: "global",
+				global: dados.estiloBotaoGlobal,
+				doQuadrante: undefined,
+				doBotao: undefined,
+			});
+		});
+	}
+
+	/** Tamanho dos botões e títulos: o que o card MOSTRA, antes de como ele é desenhado. */
+	private desenharAparenciaCard(el: HTMLElement, dados: DadosDashHome): void {
 		new Setting(el)
 			.setName("Tamanho dos botões")
+			.setDesc("Vale para o dashboard inteiro. Cada botão ainda pode ter o seu tamanho de letra.")
 			.addDropdown((drop) => {
 				drop.addOption("pequeno", "Pequeno");
 				drop.addOption("medio", "Médio");
@@ -413,13 +472,17 @@ export class PainelConfigDashCards extends PluginSettingTab {
 
 		new Setting(el)
 			.setName("Mostrar títulos dos quadrantes")
+			.setDesc("Desligue para cards só com os botões, sem o nome em cima.")
 			.addToggle((toggle) =>
 				toggle.setValue(dados.mostrarTitulos).onChange(async (valor) => {
 					dados.mostrarTitulos = valor;
 					await this.aplicar();
 				}),
 			);
+	}
 
+	/** A moldura do card: barra colorida, arredondamento, espaçamento, fundo. */
+	private desenharAparenciaMoldura(el: HTMLElement, dados: DadosDashHome): void {
 		// A herança (global → quadrante) segue a mesma lógica do estilo de callout do Customize.
 		const global = dados.estiloGlobal;
 
@@ -509,17 +572,6 @@ export class PainelConfigDashCards extends PluginSettingTab {
 				await this.aplicar();
 			}),
 		);
-
-		// A aparência dos botões, base da herança: vale para todos, salvo o que cada quadrante — e
-		// depois cada botão — sobrescrever.
-		el.createEl("h4", { cls: "dash-home-config-subtitulo", text: "Botões" });
-		this.desenharEstiloBotao(el, {
-			alvo: (dados.estiloBotaoGlobal ??= {}),
-			camada: "global",
-			global: dados.estiloBotaoGlobal,
-			doQuadrante: undefined,
-			doBotao: undefined,
-		});
 	}
 
 	/** Slider do estilo global. Sempre tem valor (cai no padrão de fábrica), então não tem "herdar". */
