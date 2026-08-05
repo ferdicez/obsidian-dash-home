@@ -1,9 +1,9 @@
 {
 	"id": "dash-cards",
 	"name": "Dash Cards",
-	"version": "0.13.0",
+	"version": "0.14.0",
 	"minAppVersion": "1.4.10",
-	"description": "Dashboard inicial de navegação: quadrantes em colunas com botões que abrem notas, pastas, buscas, comandos e alteram propriedades.",
+	"description": "Dashboard inicial de navegação: quadrantes em colunas com botões que abrem notas, pastas, buscas, comandos e alteram propriedades, com biblioteca de botões pré-configurados.",
 	"author": "ferdicez",
 	"authorUrl": "",
 	"isDesktopOnly": false

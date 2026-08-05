@@ -541,6 +541,112 @@
 	min-width: 0;
 }
 
+/* ── Botão vinculado à biblioteca ────────────────────────────────────────────────────────
+ *
+ * Num botão vinculado o nome e o ícone vêm do molde e NÃO são editáveis aqui (ver
+ * `botaoResolvido`), então a linha do topo mostra o rótulo no lugar do campo de texto. Esse rótulo
+ * mora no `setting-item-info`, que a regra acima esconde para o caso comum — daí a exceção.
+ *
+ * Classe repetida (`.x.x`) para somar especificidade: é a armadilha nº 3 do plugin, o CSS do tema
+ * vence em `.setting-item` sem isso. */
+.dash-home-config-botao-vinculado.dash-home-config-botao-vinculado .dash-home-config-botao-topo .setting-item-info {
+	display: block;
+	min-width: 0;
+}
+
+/* A barra lateral é o sinal visual de "este conteúdo vem de outro lugar" — sem ela, um botão sem
+   campos editáveis pareceria um botão quebrado. */
+.dash-home-config-botao-vinculado {
+	border-left: 2px solid var(--interactive-accent);
+}
+
+.dash-home-config-vinculo {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+	min-width: 0;
+}
+
+.dash-home-config-vinculo-icone {
+	display: flex;
+	color: var(--text-muted);
+}
+
+.dash-home-config-vinculo-icone svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+/* Nome longo trunca em vez de empurrar "Editar o salvo" para fora da linha. */
+.dash-home-config-vinculo-nome {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* A descrição ("Botão salvo · Abre a nota X") é contexto, não o rótulo: sem afiná-la ela sai com
+   quase o mesmo peso do nome, e a linha passa a ter dois títulos competindo. */
+.dash-home-config-botao-vinculado .dash-home-config-botao-topo .setting-item-description {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* ── A lista de escolha do botão salvo (modal) ───────────────────────────────────────────── */
+.dash-home-config-salvos {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3em;
+	max-height: 50vh;
+	overflow-y: auto;
+}
+
+/* `text-align: left` porque <button> centraliza por padrão, e aqui a linha é um item de lista. */
+.dash-home-config-salvo-item {
+	display: flex;
+	align-items: center;
+	gap: 0.6em;
+	width: 100%;
+	padding: 0.5em 0.7em;
+	text-align: left;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+	height: auto;
+}
+
+.dash-home-config-salvo-item:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+}
+
+.dash-home-config-salvo-icone {
+	display: flex;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.dash-home-config-salvo-textos {
+	min-width: 0;
+}
+
+.dash-home-config-salvo-nome {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+/* A descrição da ação é o que distingue dois botões de nome parecido — mas é secundária ao nome. */
+.dash-home-config-salvo-acao {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 /* O botão de destino mostra o caminho escolhido — pode ser longo, então trunca em vez de esticar. */
 .dash-home-config-botao-destino .setting-item-control > button {
 	max-width: 100%;

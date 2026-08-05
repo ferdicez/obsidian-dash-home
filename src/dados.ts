@@ -154,6 +154,72 @@ export interface Botao {
 	 * É a terceira camada da herança — ver `estilo-botao.ts`.
 	 */
 	estilo?: EstiloBotao;
+	/**
+	 * O id do botão salvo (`BotaoSalvo`) de onde este botão vem, quando ele é VINCULADO.
+	 *
+	 * Vinculado significa que o conteúdo real mora na biblioteca: editar o molde muda este botão em
+	 * todos os dashboards de uma vez. Foi a escolha dela, em vez de a cópia solta.
+	 *
+	 * A consequência é que os campos deste objeto (texto, ícone, tipo, destino, propriedades…)
+	 * **não valem nada** enquanto o vínculo existe — quem desenha tem que passar por
+	 * `botaoResolvido()`, nunca ler o botão direto. Mesma regra de `estiloAtivo()` (armadilha nº 19).
+	 *
+	 * Os campos continuam guardados, e não apagados, por dois motivos: desvincular devolve um botão
+	 * inteiro em vez de um esqueleto, e um molde excluído não leva o botão junto.
+	 */
+	salvoId?: string;
+}
+
+/**
+ * Um botão pré-configurado na biblioteca, disponível em TODOS os dashboards.
+ *
+ * Existe para que montar um card não exija reescolher ícone, ação e propriedades a cada vez: ela
+ * cadastra o botão uma vez aqui e, na montagem, só o seleciona.
+ *
+ * É um `Botao` sem `id`/`salvoId`: um molde não mora num quadrante e não se vincula a outro molde.
+ * O `estilo` VEM junto — é parte do que ela configurou — e continua sendo a terceira camada da
+ * herança, então um molde sem cor própria ainda se adapta ao quadrante em que for usado.
+ */
+export interface BotaoSalvo {
+	id: string;
+	/** O nome na biblioteca. É também o rótulo do botão no dashboard. */
+	texto: string;
+	icone?: string;
+	tipo: TipoAcao;
+	destino: string;
+	propriedades?: MudancaPropriedade[];
+	criar?: CriarNota;
+	estilo?: EstiloBotao;
+}
+
+/**
+ * O conteúdo REAL de um botão: o molde, quando ele é vinculado; ele mesmo, quando não é.
+ *
+ * Ponto único da regra, como `estiloAtivo()`. Render, nota e painel passam todos por aqui — ler
+ * `quadrante.botoes[i]` direto mostraria o esqueleto guardado (o texto de antes do vínculo) em vez
+ * do que ela configurou na biblioteca.
+ *
+ * Vínculo QUEBRADO (o molde foi excluído) cai no próprio botão: os campos continuam lá justamente
+ * para este caso, e um botão que ainda funciona é melhor que um buraco na nota dela.
+ */
+export function botaoResolvido(botao: Botao, salvos: BotaoSalvo[] | undefined): Botao {
+	if (!botao.salvoId) return botao;
+	const molde = salvos?.find((s) => s.id === botao.salvoId);
+	if (!molde) return botao;
+
+	// O `id` é do BOTÃO, não do molde: ele é chave de acordeão no painel, e dois botões vindos do
+	// mesmo molde no mesmo quadrante abririam e fechariam juntos.
+	return {
+		id: botao.id,
+		salvoId: botao.salvoId,
+		texto: molde.texto,
+		icone: molde.icone,
+		tipo: molde.tipo,
+		destino: molde.destino,
+		propriedades: molde.propriedades,
+		criar: molde.criar,
+		estilo: molde.estilo,
+	};
 }
 
 /** Uma caixa de digitação ligada a uma propriedade da nota aberta. */
@@ -281,6 +347,14 @@ export interface DadosDashHome {
 	 * sobrescrever. Base da herança de três níveis.
 	 */
 	estiloBotaoGlobal: EstiloBotao;
+	/**
+	 * A biblioteca de botões pré-configurados, compartilhada por TODOS os dashboards (escolha dela).
+	 *
+	 * Fica na raiz, e não dentro de `Dashboard`, exatamente por isso: cadastrar uma vez e usar em
+	 * qualquer predefinição é o ponto do recurso. Num dashboard só, ela recadastraria tudo ao criar
+	 * o próximo.
+	 */
+	botoesSalvos: BotaoSalvo[];
 }
 
 /**
@@ -338,6 +412,7 @@ export const DADOS_PADRAO: DadosDashHome = {
 	mostrarTitulos: true,
 	estiloGlobal: {},
 	estiloBotaoGlobal: {},
+	botoesSalvos: [],
 };
 
 /** Devolvido quando não há dashboard nenhum. Congelado: ninguém escreve nele por acidente. */
@@ -497,6 +572,9 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 	// ele. A normalização descarta campo inválido em vez de corrigi-lo — ver `estilo-botao.ts`.
 	dados.estiloBotaoGlobal = normalizarEstiloBotao(dados.estiloBotaoGlobal) ?? {};
 
+	// A biblioteca é lista e o Object.assign é raso: um data.json anterior a ela vem sem a chave.
+	dados.botoesSalvos = normalizarBotoesSalvos(dados.botoesSalvos);
+
 	for (const dash of dados.dashboards) {
 		dash.colunas = limitarColunas(dash.colunas);
 		dash.largura = limitarLargura(dash.largura);
@@ -530,6 +608,9 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 			// Um tipo desconhecido viraria um botão que não faz nada ao clicar; "nota" é o
 			// fallback seguro (no pior caso avisa que a nota não existe).
 			for (const botao of quad.botoes) {
+				// Um `salvoId` que não é string sobrevivente viraria um vínculo que nunca resolve, e o
+				// botão mostraria o esqueleto para sempre. Vazio = não vinculado, o estado neutro.
+				if (typeof botao.salvoId !== "string" || !botao.salvoId) delete botao.salvoId;
 				if (!TIPOS_VALIDOS.has(botao.tipo)) botao.tipo = "nota";
 				botao.estilo = normalizarEstiloBotao(botao.estilo);
 				botao.propriedades = normalizarPropriedades(botao.propriedades);
@@ -725,7 +806,176 @@ export function limparOpcoes(lista: unknown[]): string[] {
 	return saida;
 }
 
-export function criarMudancaPropriedade(botao: Botao): MudancaPropriedade {
+/**
+ * Blindagem da biblioteca de botões vinda do data.json.
+ *
+ * SEM ID é descartado, e não corrigido com um id novo: o id é o que os botões dos dashboards
+ * apontam, e inventar um deixaria os vínculos existentes apontando para o nada — o molde apareceria
+ * na lista mas nenhum botão o encontraria.
+ *
+ * O resto segue as regras já usadas nos botões: tipo inválido cai em "nota", e as partes aninhadas
+ * passam pelos normalizadores que já existem.
+ */
+export function normalizarBotoesSalvos(valor: unknown): BotaoSalvo[] {
+	if (!Array.isArray(valor)) return [];
+
+	const saida: BotaoSalvo[] = [];
+	const vistos = new Set<string>();
+	for (const item of valor) {
+		if (!item || typeof item !== "object") continue;
+		const bruto = item as Partial<BotaoSalvo>;
+		if (typeof bruto.id !== "string" || !bruto.id) continue;
+		// Id repetido faria `find` devolver sempre o primeiro: o segundo molde seria inalcançável,
+		// e editá-lo não mudaria botão nenhum.
+		if (vistos.has(bruto.id)) continue;
+		vistos.add(bruto.id);
+
+		const salvo: BotaoSalvo = {
+			id: bruto.id,
+			texto: typeof bruto.texto === "string" ? bruto.texto : "",
+			tipo:
+				typeof bruto.tipo === "string" && TIPOS_VALIDOS.has(bruto.tipo)
+					? (bruto.tipo as TipoAcao)
+					: "nota",
+			destino: typeof bruto.destino === "string" ? bruto.destino : "",
+		};
+		if (typeof bruto.icone === "string" && bruto.icone) salvo.icone = bruto.icone;
+		salvo.propriedades = normalizarPropriedades(bruto.propriedades);
+		salvo.criar = normalizarCriar(bruto.criar);
+		salvo.estilo = normalizarEstiloBotao(bruto.estilo);
+
+		saida.push(salvo);
+	}
+	return saida;
+}
+
+/** Cadastra um botão novo na biblioteca, vazio e pronto para ser configurado. */
+export function criarBotaoSalvo(dados: DadosDashHome, texto: string): BotaoSalvo {
+	const salvo: BotaoSalvo = {
+		id: novoId("s"),
+		texto: texto.trim() || "Novo botão salvo",
+		tipo: "nota",
+		destino: "",
+	};
+	(dados.botoesSalvos ??= []).push(salvo);
+	return salvo;
+}
+
+/**
+ * Coloca no quadrante um botão VINCULADO a um molde da biblioteca.
+ *
+ * O botão nasce só com o vínculo: o conteúdo vem de `botaoResolvido()` na hora de desenhar. Copiar
+ * os campos aqui pareceria funcionar e divergiria do molde na primeira edição dele — que é
+ * justamente o contrário do que ela escolheu.
+ */
+export function usarBotaoSalvo(quadrante: Quadrante, salvo: BotaoSalvo): Botao {
+	const botao: Botao = {
+		id: novoId("b"),
+		salvoId: salvo.id,
+		// Guardados como retrato do molde no momento em que foi usado: é o que sobra se o molde for
+		// excluído, e o que `desvincular()` promove a botão próprio.
+		texto: salvo.texto,
+		icone: salvo.icone,
+		tipo: salvo.tipo,
+		destino: salvo.destino,
+		propriedades: salvo.propriedades?.map((p) => ({ ...p, id: novoId("p"), opcoes: p.opcoes ? [...p.opcoes] : undefined })),
+		criar: salvo.criar ? { ...salvo.criar } : undefined,
+		estilo: salvo.estilo ? { ...salvo.estilo } : undefined,
+	};
+	quadrante.botoes.push(botao);
+	return botao;
+}
+
+/**
+ * Corta o vínculo: o botão vira independente, com os valores que o molde tem AGORA.
+ *
+ * Sem isto, um botão vinculado seria uma prisão — ela não poderia mudar um único dashboard sem
+ * mudar todos. E a cópia é dos valores atuais (não do retrato guardado) porque é o que ela está
+ * vendo na tela; devolver um estado antigo pareceria o botão mudar sozinho ao desvincular.
+ */
+export function desvincularBotao(botao: Botao, salvos: BotaoSalvo[] | undefined): void {
+	const atual = botaoResolvido(botao, salvos);
+	botao.texto = atual.texto;
+	botao.icone = atual.icone;
+	botao.tipo = atual.tipo;
+	botao.destino = atual.destino;
+	// Cópia profunda com ids novos: as mudanças vinham do molde e continuariam compartilhadas com
+	// ele — editar o botão desvinculado mexeria no molde, em silêncio.
+	botao.propriedades = atual.propriedades?.map((p) => ({
+		...p,
+		id: novoId("p"),
+		opcoes: p.opcoes ? [...p.opcoes] : undefined,
+	}));
+	botao.criar = atual.criar ? { ...atual.criar } : undefined;
+	botao.estilo = atual.estilo ? { ...atual.estilo } : undefined;
+	delete botao.salvoId;
+}
+
+/** Em quantos quadrantes (de todos os dashboards) um molde é usado. */
+export function usosDoBotaoSalvo(dados: DadosDashHome, salvoId: string): number {
+	let total = 0;
+	for (const dash of dados.dashboards) {
+		for (const quad of dash.quadrantes) {
+			for (const botao of quad.botoes) {
+				if (botao.salvoId === salvoId) total++;
+			}
+		}
+	}
+	return total;
+}
+
+/**
+ * Exclui um molde da biblioteca e DESVINCULA os botões que o usavam, em vez de deixá-los órfãos.
+ *
+ * Um vínculo quebrado já cairia no retrato guardado (`botaoResolvido`), então nada sumiria da nota
+ * dela de qualquer forma. Desvincular de fato é o passo a mais que evita um botão que parece
+ * vinculado a um molde inexistente — e que voltaria a se vincular se um id igual reaparecesse.
+ */
+export function removerBotaoSalvo(dados: DadosDashHome, salvoId: string): boolean {
+	const i = (dados.botoesSalvos ?? []).findIndex((s) => s.id === salvoId);
+	if (i < 0) return false;
+
+	// Desvincula ANTES de remover: `desvincularBotao` lê o molde para copiar os valores atuais.
+	for (const dash of dados.dashboards) {
+		for (const quad of dash.quadrantes) {
+			for (const botao of quad.botoes) {
+				if (botao.salvoId === salvoId) desvincularBotao(botao, dados.botoesSalvos);
+			}
+		}
+	}
+
+	dados.botoesSalvos.splice(i, 1);
+	return true;
+}
+
+/** Duplica um molde da biblioteca, com a cópia logo abaixo do original. */
+export function duplicarBotaoSalvo(dados: DadosDashHome, indice: number): BotaoSalvo | undefined {
+	const original = (dados.botoesSalvos ?? [])[indice];
+	if (!original) return undefined;
+
+	const copia: BotaoSalvo = {
+		...original,
+		id: novoId("s"),
+		texto: `${original.texto} (cópia)`,
+		estilo: original.estilo ? { ...original.estilo } : undefined,
+		criar: original.criar ? { ...original.criar } : undefined,
+		propriedades: original.propriedades?.map((p) => ({
+			...p,
+			id: novoId("p"),
+			opcoes: p.opcoes ? [...p.opcoes] : undefined,
+		})),
+	};
+
+	dados.botoesSalvos.splice(indice + 1, 0, copia);
+	return copia;
+}
+
+/**
+ * Aceita `Botao` OU `BotaoSalvo`: a lista de propriedades tem o mesmo formato nos dois, e o painel
+ * usa o mesmo editor para o botão do quadrante e para o molde da biblioteca. Um segundo criador
+ * idêntico só criaria a chance de os dois divergirem.
+ */
+export function criarMudancaPropriedade(botao: { propriedades?: MudancaPropriedade[] }): MudancaPropriedade {
 	const mudanca: MudancaPropriedade = {
 		id: novoId("p"),
 		nome: "",

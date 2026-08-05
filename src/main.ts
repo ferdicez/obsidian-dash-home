@@ -87,7 +87,13 @@ export default class DashCardsPlugin extends Plugin {
 	 * deles seria um bug silencioso — a nota sairia sem parte da aparência).
 	 */
 	private gerarNotas(dashboard: Dashboard): Promise<TFile[]> {
-		return escreverDashboard(this.app, dashboard, this.dados.estiloGlobal, this.dados.estiloBotaoGlobal);
+		return escreverDashboard(
+			this.app,
+			dashboard,
+			this.dados.estiloGlobal,
+			this.dados.estiloBotaoGlobal,
+			this.dados.botoesSalvos,
+		);
 	}
 
 	/**

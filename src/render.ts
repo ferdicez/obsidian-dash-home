@@ -1,5 +1,6 @@
 import { MarkdownRenderer, setIcon, type App, type Component } from "obsidian";
 import {
+	botaoResolvido,
 	corCss,
 	ehControle,
 	type Botao,
@@ -179,7 +180,10 @@ function renderizarQuadrante(
 	// o plugin sempre teve, e agora é só o último degrau da herança.
 	const corDoQuadrante = corCss(quadrante.cor);
 
-	for (const botao of quadrante.botoes) {
+	for (const bruto of quadrante.botoes) {
+		// Resolve o vínculo com a biblioteca ANTES de desenhar: um botão vinculado guarda só o
+		// retrato de quando foi usado, e desenhá-lo direto mostraria o estado antigo do molde.
+		const botao = botaoResolvido(bruto, dados.botoesSalvos);
 		renderizarBotao(lista, botao, opcoes, {
 			global: dados.estiloBotaoGlobal,
 			doQuadrante: estiloBotaoDoQuadrante,

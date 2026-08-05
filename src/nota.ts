@@ -1,5 +1,5 @@
 import { Notice, TFile, TFolder, normalizePath, type App } from "obsidian";
-import type { Dashboard } from "./dados";
+import { botaoResolvido, type BotaoSalvo, type Dashboard } from "./dados";
 import { estiloAtivo, type EstiloQuadrante } from "./estilo";
 import { estiloBotaoAtivo, type EstiloBotao } from "./estilo-botao";
 
@@ -35,6 +35,7 @@ export function gerarBloco(
 	dashboard: Dashboard,
 	estiloGlobal?: EstiloQuadrante,
 	estiloBotaoGlobal?: EstiloBotao,
+	botoesSalvos?: BotaoSalvo[],
 ): string {
 	const linhas: string[] = [];
 	linhas.push(ABRE);
@@ -121,7 +122,10 @@ export function gerarBloco(
 			continue;
 		}
 		linhas.push(`    botoes:`);
-		for (const botao of quadrante.botoes) {
+		for (const bruto of quadrante.botoes) {
+			// Resolvido, como no render: o bloco descreve o que o dashboard MOSTRA, e um botão
+			// vinculado mostra o molde da biblioteca — não o retrato guardado dentro dele.
+			const botao = botaoResolvido(bruto, botoesSalvos);
 			linhas.push(`      - texto: ${aspas(botao.texto)}`);
 			if (botao.icone) linhas.push(`        icone: ${botao.icone}`);
 			linhas.push(`        tipo: ${botao.tipo}`);
@@ -226,10 +230,11 @@ export async function escreverDashboard(
 	dashboard: Dashboard,
 	estiloGlobal?: EstiloQuadrante,
 	estiloBotaoGlobal?: EstiloBotao,
+	botoesSalvos?: BotaoSalvo[],
 ): Promise<TFile[]> {
 	const escritos: TFile[] = [];
 	for (const caminho of dashboard.caminhosNota ?? []) {
-		const arquivo = await escreverEmUmaNota(app, dashboard, caminho, estiloGlobal, estiloBotaoGlobal);
+		const arquivo = await escreverEmUmaNota(app, dashboard, caminho, estiloGlobal, estiloBotaoGlobal, botoesSalvos);
 		if (arquivo) escritos.push(arquivo);
 	}
 	return escritos;
@@ -245,6 +250,7 @@ async function escreverEmUmaNota(
 	caminhoBruto: string,
 	estiloGlobal?: EstiloQuadrante,
 	estiloBotaoGlobal?: EstiloBotao,
+	botoesSalvos?: BotaoSalvo[],
 ): Promise<TFile | null> {
 	const bruto = caminhoBruto?.trim() ?? "";
 	// Um caminho vazio viraria ".md" — um arquivo oculto e sem nome. Melhor não escrever nada e
@@ -252,7 +258,7 @@ async function escreverEmUmaNota(
 	if (!bruto) return null;
 
 	const caminho = normalizePath(bruto.toLowerCase().endsWith(".md") ? bruto : `${bruto}.md`);
-	const bloco = gerarBloco(dashboard, estiloGlobal, estiloBotaoGlobal);
+	const bloco = gerarBloco(dashboard, estiloGlobal, estiloBotaoGlobal, botoesSalvos);
 
 	try {
 		const existente = acharArquivo(app, caminho);
