@@ -10,6 +10,7 @@ import {
 	dashboardQueUsaNota,
 	duplicarBotao,
 	duplicarQuadrante,
+	ehControle,
 	ehHex,
 	limitarColunas,
 	limitarLargura,
@@ -1671,10 +1672,6 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			this.desenharPropriedades(linha, botao);
 		}
 
-		if (botao.tipo === "campo") {
-			this.desenharCampo(linha, botao);
-		}
-
 		// Terceira linha: a aparência SÓ deste botão — a camada de cima da herança. É o que
 		// permite um botão verde e um vermelho no mesmo quadrante.
 		const secaoEstilo = criarAcordeao(linha, {
@@ -1714,9 +1711,10 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			drop.addOption("pasta", "Abrir pasta");
 			drop.addOption("busca", "Buscar");
 			drop.addOption("comando", "Rodar comando");
+			// "campo" NÃO é oferecido: virou a operação "digitar" dentro de "propriedade" (s23).
+			// O valor antigo ainda existe no tipo para a carga poder migrá-lo.
 			drop.addOption("propriedade", "Alterar propriedades");
-			drop.addOption("campo", "Campo para digitar");
-			drop.setValue(botao.tipo);
+			drop.setValue(botao.tipo === "campo" ? "propriedade" : botao.tipo);
 			drop.onChange(async (valor) => {
 				// O destino antigo não faz sentido no tipo novo (um caminho de nota não é uma query
 				// de busca), então limpamos — melhor um campo vazio do que um destino que falha.
@@ -1736,12 +1734,6 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			return;
 		}
 
-		if (botao.tipo === "campo") {
-			// Também sem destino: o alvo é a nota aberta e a propriedade fica em `campo`, logo
-			// abaixo. Aqui só a explicação de que este não é um botão de clicar.
-			destino.setDesc("Vira uma caixa de digitação no dashboard, ligada a uma propriedade da nota aberta.");
-			return;
-		}
 
 		if (botao.tipo === "busca") {
 			// Busca é o único tipo cujo destino é texto livre: não há lista de queries para escolher.
@@ -1788,72 +1780,29 @@ export class PainelConfigDashCards extends PluginSettingTab {
 		}
 	}
 
-	/**
-	 * A caixa de digitação: qual propriedade ela preenche e de que formato.
-	 *
-	 * É UMA propriedade só, ao contrário do tipo "propriedade" (que é lista): aqui o valor vem da
-	 * digitação dela na hora, e uma caixa que preenchesse dois campos com o mesmo texto não teria
-	 * uso real. Para vários campos, vários botões — que é o que o print do Meta Bind dela mostra.
-	 */
-	private desenharCampo(el: HTMLElement, botao: Botao): void {
-		// `??=` cria o objeto ao abrir a seção; a normalização da carga descarta o que ficar sem
-		// nome, então um campo espiado e abandonado não vira lixo no data.json.
-		const campo = (botao.campo ??= { nome: "", tipo: "texto" });
-
-		const alvo = new Setting(el)
-			.setName("Propriedade")
-			.setDesc(
-				campo.nome
-					? `A caixa preenche "${campo.nome}" na nota aberta.`
-					: "Escolha qual propriedade da nota esta caixa preenche.",
-			);
-
-		alvo.addButton((b) => {
-			b.setButtonText(campo.nome || "Escolher propriedade…");
-			b.setTooltip(campo.nome || "Escolher a propriedade da nota");
-			b.onClick(() => {
-				new ModalEscolherPropriedade(this.app, async (nome) => {
-					campo.nome = nome;
-					// Adota o nome da propriedade como rótulo do botão, se ela ainda não deu um: é o
-					// que o print dela mostra (o título do card é o nome da propriedade), e poupa
-					// digitar a mesma palavra duas vezes.
-					if (!botao.texto || botao.texto === "Novo botão") botao.texto = nome;
-					await this.aplicar();
-				}).open();
-			});
-		});
-
-		alvo.addDropdown((drop) => {
-			drop.addOption("texto", "Texto");
-			drop.addOption("numero", "Número");
-			drop.addOption("data", "Data");
-			drop.setValue(campo.tipo);
-			drop.onChange(async (valor) => {
-				campo.tipo = valor as TipoCampo;
-				await this.aplicar();
-			});
-		});
-
+	/** A dica da caixa vazia, e o aviso do que o formato escolhido grava. */
+	private desenharDicaDoCampo(el: HTMLElement, mudanca: MudancaPropriedade): void {
 		new Setting(el)
 			.setName("Dica dentro da caixa")
 			.setDesc("Opcional. O texto cinza que aparece enquanto a caixa está vazia.")
 			.addText((texto) =>
 				texto
 					.setPlaceholder("Ex.: dias antes")
-					.setValue(campo.placeholder ?? "")
+					.setValue(mudanca.dica ?? "")
 					.onChange((valor) => {
-						campo.placeholder = valor;
+						mudanca.dica = valor;
 						this.salvarDigitacao();
 					}),
 			);
 
+		const formato = mudanca.formato ?? "texto";
 		el.createDiv({
 			cls: "dash-home-config-vazio",
 			text:
-				campo.tipo === "numero"
-					? "Grava como número — uma Base que filtra por número acha a nota."
-					: campo.tipo === "data"
-						? "Grava como data (AAAA-MM-DD)."
+				formato === "numero"
+					? "Grava como número — uma Base que filtra por número acha a nota. Apagar a caixa remove a propriedade."
+					: formato === "data"
+						? "Grava como data (AAAA-MM-DD). Apagar a caixa remove a propriedade."
 						: "Grava como texto. Apagar a caixa remove a propriedade da nota.",
 		});
 	}
@@ -1915,30 +1864,75 @@ export class PainelConfigDashCards extends PluginSettingTab {
 				drop.addOption("definir", "Definir como");
 				drop.addOption("alternar", "Alternar entre");
 				drop.addOption("escolher", "Escolher de uma lista");
+				drop.addOption("digitar", "Digitar (caixa no card)");
+				drop.addOption("interruptor", "Interruptor (sim/não)");
 				drop.setValue(mudanca.operacao);
 				drop.onChange(async (valor) => {
-					mudanca.operacao = valor as OperacaoPropriedade;
+					const nova = valor as OperacaoPropriedade;
+
+					// As operações de CONTROLE não convivem com as de clique no mesmo botão: um
+					// botão que virou caixa de digitação não tem clique sobrando para gravar um
+					// "definir". Recusar é mais honesto que aceitar e ignorar em silêncio — ela
+					// veria a propriedade listada e concluiria que é gravada.
+					const outras = mudancas.filter((m) => m !== mudanca);
+					const conflito = ehControle(nova)
+						? outras.length > 0
+						: outras.some((m) => ehControle(m.operacao));
+
+					if (conflito) {
+						new Notice(
+							ehControle(nova)
+								? "“Digitar” e “Interruptor” viram o próprio botão, então precisam estar sozinhos. Crie outro botão para esta propriedade."
+								: "Este botão é um controle (digitar/interruptor) e não tem clique. Crie outro botão para esta propriedade.",
+						);
+						// Redesenha para o dropdown voltar ao valor real — sem isto ele continua
+						// mostrando a opção recusada.
+						this.atualizar();
+						return;
+					}
+
+					mudanca.operacao = nova;
 					// Sair do alternar descarta o segundo valor: mantê-lo escondido faria ele
 					// reaparecer sozinho se ela voltasse a alternar depois.
 					if (mudanca.operacao !== "alternar") delete mudanca.valor2;
-					// `opcoes` NÃO é descartada ao sair do "escolher": montar uma lista de seis
-					// valores é trabalho, e apagá-la porque ela espiou outra operação seria perdê-lo.
+					// `opcoes`, `formato` e `dica` NÃO são descartados ao trocar de operação: montar
+					// uma lista de seis valores (ou configurar a caixa) é trabalho, e apagá-lo
+					// porque ela espiou outra operação seria perdê-lo.
 					await this.aplicar();
 				});
 			});
 
-			alvo.addDropdown((drop) => {
-				drop.addOption("texto", "Texto");
-				drop.addOption("numero", "Número");
-				drop.addOption("booleano", "Sim/não");
-				drop.addOption("data", "Data");
-				drop.addOption("vazio", "Limpar");
-				drop.setValue(mudanca.tipo);
-				drop.onChange(async (valor) => {
-					mudanca.tipo = valor as TipoValorPropriedade;
-					await this.aplicar();
+			// O dropdown de tipo muda de significado conforme a operação:
+			//
+			// - "digitar": é o FORMATO da caixa, e só os três que se digitam. Booleano e vazio não
+			//   fazem sentido numa caixa de texto — quem quer sim/não usa o interruptor.
+			// - "interruptor": não há escolha nenhuma; o valor é sempre booleano.
+			// - as outras: o tipo do valor gravado, como sempre.
+			if (mudanca.operacao === "digitar") {
+				alvo.addDropdown((drop) => {
+					drop.addOption("texto", "Texto");
+					drop.addOption("numero", "Número");
+					drop.addOption("data", "Data");
+					drop.setValue(mudanca.formato ?? "texto");
+					drop.onChange(async (valor) => {
+						mudanca.formato = valor as TipoCampo;
+						await this.aplicar();
+					});
 				});
-			});
+			} else if (mudanca.operacao !== "interruptor") {
+				alvo.addDropdown((drop) => {
+					drop.addOption("texto", "Texto");
+					drop.addOption("numero", "Número");
+					drop.addOption("booleano", "Sim/não");
+					drop.addOption("data", "Data");
+					drop.addOption("vazio", "Limpar");
+					drop.setValue(mudanca.tipo);
+					drop.onChange(async (valor) => {
+						mudanca.tipo = valor as TipoValorPropriedade;
+						await this.aplicar();
+					});
+				});
+			}
 
 			alvo.addExtraButton((b) =>
 				b
@@ -1970,6 +1964,22 @@ export class PainelConfigDashCards extends PluginSettingTab {
 						await this.aplicar();
 					}),
 			);
+
+			// O interruptor não tem valor a configurar: ele grava sim/não conforme a chavinha, e o
+			// estado inicial vem da própria nota.
+			if (mudanca.operacao === "interruptor") {
+				new Setting(caixa).setDesc(
+					`Desenha uma chavinha no card. Ligada grava "sim" em "${mudanca.nome || "…"}", desligada grava "não".`,
+				);
+				return;
+			}
+
+			// "Digitar" também não tem valor fixo — quem digita é ela, na hora. O que se configura
+			// aqui é só a dica da caixa vazia.
+			if (mudanca.operacao === "digitar") {
+				this.desenharDicaDoCampo(caixa, mudanca);
+				return;
+			}
 
 			// "Limpar" apaga a propriedade da nota — não há valor a digitar.
 			if (mudanca.tipo === "vazio") {

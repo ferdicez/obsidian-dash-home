@@ -1,5 +1,14 @@
 import { MarkdownRenderer, setIcon, type App, type Component } from "obsidian";
-import { corCss, type Botao, type Dashboard, type DadosDashHome, type Quadrante } from "./dados";
+import {
+	corCss,
+	ehControle,
+	type Botao,
+	type Dashboard,
+	type DadosDashHome,
+	type MudancaPropriedade,
+	type Quadrante,
+} from "./dados";
+import { ehVerdadeiro } from "./propriedades";
 import { bordasDoQuadrante, estiloAtivo, resolverEstilo, variaveisDoQuadrante } from "./estilo";
 import {
 	colunasDoArranjo,
@@ -269,10 +278,14 @@ function renderizarBotao(
 	opcoes: OpcoesRender,
 	ctx: ContextoBotao,
 ): void {
-	// O "campo" não é um botão: em vez de agir no clique, ele É o controle. Sai por um caminho
-	// próprio antes de qualquer coisa de <a>, hover ou ação.
-	if (botao.tipo === "campo") {
-		renderizarCampo(lista, botao, opcoes, ctx);
+	// "digitar" e "interruptor" não são cliques: o botão É o controle. Saem por um caminho próprio
+	// antes de qualquer coisa de <a>, hover ou ação.
+	//
+	// A PRIMEIRA mudança decide, e o painel garante que as operações não se misturem num mesmo
+	// botão — ver `ehControle`.
+	const controle = (botao.propriedades ?? []).find((m) => ehControle(m.operacao));
+	if (botao.tipo === "propriedade" && controle) {
+		renderizarControle(lista, botao, controle, opcoes, ctx);
 		return;
 	}
 
@@ -337,29 +350,20 @@ function renderizarBotao(
 }
 
 /**
- * A caixa de digitação ligada a uma propriedade da nota aberta — o que substitui o input do
- * Meta Bind.
+ * Os dois controles que vivem DENTRO do card, em vez de agir num clique: a caixa de digitação
+ * ("digitar") e a chavinha ("interruptor"). Juntos substituem o input e o toggle do Meta Bind.
  *
- * ── Quando grava ─────────────────────────────────────────────────────────────────────────
- *
- * No `change` (sair do campo ou apertar Enter), e não a cada tecla. Escolha dela, e a certa:
- * digitar "120" gravaria 1, 12 e 120 na nota — três escritas, e duas com um valor que ela nunca
- * quis. Um Enter também tira o foco, para o retorno visual ser o mesmo dos dois caminhos.
- *
- * ── Por que o valor não é relido depois de gravar ────────────────────────────────────────
- *
- * O que ela digitou já está na caixa; reler do frontmatter para reescrever a mesma coisa só
- * criaria a chance de a caixa pular sozinha enquanto ela ainda está nela.
+ * O rótulo e a moldura são comuns aos dois; só o miolo muda.
  */
-function renderizarCampo(
+function renderizarControle(
 	lista: HTMLElement,
 	botao: Botao,
+	mudanca: MudancaPropriedade,
 	opcoes: OpcoesRender,
 	ctx: ContextoBotao,
 ): void {
-	const cfg = botao.campo;
-
 	const caixa = lista.createDiv({ cls: "dash-home-campo" });
+	caixa.toggleClass("is-interruptor", mudanca.operacao === "interruptor");
 
 	const estilo = resolverEstiloBotao(ctx.global, ctx.doQuadrante, botao.estilo);
 	const cor = estilo.cor ? corCss(estilo.cor) : ctx.corDoQuadrante;
@@ -367,44 +371,55 @@ function renderizarCampo(
 		caixa.style.setProperty(prop, valor);
 	}
 
-	// O rótulo fica ACIMA da caixa, como no Meta Bind do print dela: o nome da propriedade é o
-	// título do card, e a caixa é o controle logo abaixo.
+	// O rótulo fica ACIMA do controle, como no Meta Bind do print dela: o nome da propriedade é o
+	// título, o controle vem logo abaixo.
 	if (botao.texto) {
 		const rotulo = caixa.createDiv({ cls: "dash-home-campo-rotulo" });
 		if (botao.icone) setIcon(rotulo.createSpan({ cls: "dash-home-campo-icone" }), botao.icone);
 		rotulo.createSpan({ text: botao.texto });
 	}
 
-	// Sem propriedade configurada não há o que preencher — e uma caixa que não grava em lugar
-	// nenhum é pior que um aviso, porque parece funcionar.
-	if (!cfg?.nome) {
-		caixa.createDiv({ cls: "dash-home-botao-vazio", text: "campo sem propriedade" });
+	// Sem propriedade não há o que preencher — e um controle que não grava em lugar nenhum é pior
+	// que um aviso, porque parece funcionar.
+	if (!mudanca.nome?.trim()) {
+		caixa.createDiv({ cls: "dash-home-botao-vazio", text: "sem propriedade" });
 		return;
 	}
 
+	// O valor atual da nota: o que faz o controle servir para CONFERIR, e não só para trocar às
+	// cegas. No interruptor é ele que decide se a chave nasce ligada.
+	const app = opcoes.app;
+	const arquivo = !opcoes.miniatura && app ? app.workspace.getActiveFile() : null;
+	const atual =
+		arquivo && app ? app.metadataCache.getFileCache(arquivo)?.frontmatter?.[mudanca.nome] : undefined;
+
+	if (mudanca.operacao === "interruptor") {
+		renderizarInterruptor(caixa, botao, mudanca, atual, opcoes);
+		return;
+	}
+
+	const formato = mudanca.formato ?? "texto";
 	const input = caixa.createEl("input", { cls: "dash-home-campo-input" });
-	input.type = cfg.tipo === "numero" ? "number" : cfg.tipo === "data" ? "date" : "text";
-	if (cfg.placeholder) input.placeholder = cfg.placeholder;
+	input.type = formato === "numero" ? "number" : formato === "data" ? "date" : "text";
+	if (mudanca.dica) input.placeholder = mudanca.dica;
 
 	if (opcoes.miniatura) {
-		// Na miniatura o campo é uma imagem do que vai existir: não lê nem escreve nota nenhuma.
+		// Na miniatura o controle é uma imagem do que vai existir: não lê nem escreve nota nenhuma.
 		input.disabled = true;
 		return;
 	}
-
-	const app = opcoes.app;
 	if (!app) return;
 
-	// O valor que já está na nota, para a caixa abrir preenchida — sem isso ela não serviria para
-	// CONFERIR o valor atual, só para trocá-lo às cegas.
-	const arquivo = app.workspace.getActiveFile();
-	if (arquivo) {
-		const atual = app.metadataCache.getFileCache(arquivo)?.frontmatter?.[cfg.nome];
-		if (atual !== undefined && atual !== null) input.value = String(atual);
-	}
+	if (atual !== undefined && atual !== null) input.value = String(atual);
 
+	// ── Quando grava ─────────────────────────────────────────────────────────────────────
+	//
+	// No `change` (sair do campo ou apertar Enter), e não a cada tecla. Escolha dela, e a certa:
+	// digitar "120" gravaria 1, 12 e 120 na nota — três escritas, duas com um valor que ela nunca
+	// quis. O valor NÃO é relido depois: o que ela digitou já está na caixa, e reler só criaria a
+	// chance de a caixa pular sozinha enquanto ela ainda está nela.
 	input.addEventListener("change", () => {
-		void gravarCampo(app, botao, input.value);
+		void gravarCampo(app, botao, mudanca, input.value);
 	});
 
 	// Enter grava e sai do campo. O `blur` dispara o `change` acima quando há mudança pendente,
@@ -413,5 +428,42 @@ function renderizarCampo(
 		if (evento.key !== "Enter") return;
 		evento.preventDefault();
 		input.blur();
+	});
+}
+
+/**
+ * A chavinha sim/não — o toggle do Meta Bind.
+ *
+ * `<input type="checkbox">` de verdade, e não uma div estilizada: vem com foco por teclado, espaço
+ * para alternar e leitura por leitor de tela de graça. A aparência de chave é só CSS por cima.
+ */
+function renderizarInterruptor(
+	caixa: HTMLElement,
+	botao: Botao,
+	mudanca: MudancaPropriedade,
+	atual: unknown,
+	opcoes: OpcoesRender,
+): void {
+	const chave = caixa.createEl("label", { cls: "dash-home-chave" });
+	const input = chave.createEl("input", { cls: "dash-home-chave-input" });
+	input.type = "checkbox";
+	chave.createSpan({ cls: "dash-home-chave-trilho" });
+
+	// `ehVerdadeiro` e não `Boolean(atual)`: o frontmatter dela pode ter "sim", "true" ou 1, e
+	// qualquer string não vazia (inclusive "não") passaria no teste de verdade do JavaScript.
+	input.checked = ehVerdadeiro(atual);
+
+	if (opcoes.miniatura) {
+		input.disabled = true;
+		return;
+	}
+
+	const app = opcoes.app;
+	if (!app) return;
+
+	// `change` e não `click`: cobre também o espaço do teclado, e não dispara quando o estado é
+	// mudado por código.
+	input.addEventListener("change", () => {
+		void gravarCampo(app, botao, mudanca, input.checked ? "sim" : "não");
 	});
 }

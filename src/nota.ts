@@ -150,19 +150,12 @@ export function gerarBloco(
 						linhas.push(`            opcoes:`);
 						for (const opcao of mudanca.opcoes) linhas.push(`              - ${aspas(opcao)}`);
 					}
-				}
-			}
-
-			// A caixa de digitação, quando é um botão do tipo "campo". Vai ao bloco pela mesma razão
-			// das propriedades: sem isto, o bloco descreveria "tipo: campo" sem dizer QUAL
-			// propriedade ele preenche — e a armadilha nº 8 do doc já mordeu três vezes.
-			if (botao.campo?.nome) {
-				linhas.push(`        campo:`);
-				linhas.push(`          nome: ${aspas(botao.campo.nome)}`);
-				linhas.push(`          tipo: ${botao.campo.tipo}`);
-				// Só quando existe: um `placeholder: ""` sugeriria uma dica que não há.
-				if (botao.campo.placeholder) {
-					linhas.push(`          dica: ${aspas(botao.campo.placeholder)}`);
+					// O formato e a dica do "digitar", pela mesma razão: sem eles o bloco diria
+					// "operacao: digitar" sem descrever a caixa que aparece no card.
+					if (mudanca.operacao === "digitar") {
+						linhas.push(`            formato: ${mudanca.formato ?? "texto"}`);
+						if (mudanca.dica) linhas.push(`            dica: ${aspas(mudanca.dica)}`);
+					}
 				}
 			}
 

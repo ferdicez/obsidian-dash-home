@@ -1,5 +1,5 @@
 import { Notice, TFile, TFolder, type App } from "obsidian";
-import type { Botao, MudancaPropriedade } from "./dados";
+import { ehControle, type Botao, type MudancaPropriedade, type TipoValorPropriedade } from "./dados";
 import { aplicarPropriedades } from "./propriedades";
 import { ModalEscolherValor } from "./seletores";
 
@@ -47,9 +47,14 @@ export async function executarAcao(app: App, botao: Botao, novaAba: boolean): Pr
  * Campo apagado remove a propriedade em vez de gravar string vazia — um `lembrete:` pendurado
  * aparece na lista de propriedades do Obsidian e nas Bases como se fosse um valor.
  */
-export async function gravarCampo(app: App, botao: Botao, texto: string): Promise<void> {
-	const cfg = botao.campo;
-	if (!cfg?.nome?.trim()) return;
+export async function gravarCampo(
+	app: App,
+	botao: Botao,
+	origem: MudancaPropriedade,
+	texto: string,
+): Promise<void> {
+	const nome = origem.nome?.trim();
+	if (!nome) return;
 
 	const arquivo = app.workspace.getActiveFile();
 	if (!(arquivo instanceof TFile) || arquivo.extension !== "md") {
@@ -59,13 +64,29 @@ export async function gravarCampo(app: App, botao: Botao, texto: string): Promis
 
 	const valor = texto.trim();
 
-	// O tipo do campo vira o tipo do VALOR, com uma exceção: vazio apaga a chave, seja qual for o
-	// tipo da caixa.
+	// O tipo do VALOR é derivado do controle, com duas regras:
+	//
+	// - No interruptor é sempre booleano — a chavinha manda "sim"/"não", que `converterValor`
+	//   transforma em `true`/`false`. E o vazio NÃO se aplica: desligar grava `false`, não apaga a
+	//   propriedade, senão a chave sumiria da nota toda vez que ela desligasse.
+	// - Na caixa, vazio APAGA a chave (um `lembrete:` pendurado aparece nas Bases como valor).
+	const formato = origem.formato ?? "texto";
+	const tipo: TipoValorPropriedade =
+		origem.operacao === "interruptor"
+			? "booleano"
+			: valor === ""
+				? "vazio"
+				: formato === "numero"
+					? "numero"
+					: formato === "data"
+						? "data"
+						: "texto";
+
 	const mudanca: MudancaPropriedade = {
-		id: `campo-${cfg.nome}`,
-		nome: cfg.nome.trim(),
+		id: origem.id,
+		nome,
 		operacao: "definir",
-		tipo: valor === "" ? "vazio" : cfg.tipo === "numero" ? "numero" : cfg.tipo === "data" ? "data" : "texto",
+		tipo,
 		valor,
 	};
 
@@ -76,7 +97,7 @@ export async function gravarCampo(app: App, botao: Botao, texto: string): Promis
 		});
 	} catch (e) {
 		console.warn("[dash-home] falha ao gravar o campo na nota:", e);
-		new Notice(`Não consegui gravar "${cfg.nome}" em "${arquivo.basename}".`);
+		new Notice(`Não consegui gravar "${nome}" em "${arquivo.basename}".`);
 		return;
 	}
 
@@ -91,7 +112,10 @@ export async function gravarCampo(app: App, botao: Botao, texto: string): Promis
  * delas. A contrapartida é que sem nota aberta não há o que alterar — daí o aviso.
  */
 async function alterarPropriedades(app: App, botao: Botao): Promise<void> {
-	const mudancas = (botao.propriedades ?? []).filter((m) => m.nome?.trim());
+	// As operações de CONTROLE (digitar, interruptor) são excluídas: elas não acontecem no clique,
+	// e sim no próprio widget que o render desenhou. Se chegassem aqui, um clique na moldura em
+	// volta da caixa gravaria o `valor` configurado por cima do que ela digitou.
+	const mudancas = (botao.propriedades ?? []).filter((m) => m.nome?.trim() && !ehControle(m.operacao));
 	if (mudancas.length === 0) {
 		new Notice(`O botão "${botao.texto}" ainda não tem propriedade configurada. Configurações → Dash Cards.`);
 		return;

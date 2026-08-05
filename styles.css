@@ -972,3 +972,71 @@
 	opacity: 1;
 	cursor: default;
 }
+
+/* ── Interruptor (chavinha sim/não) ─────────────────────────────────────────────────────────
+ *
+ * O toggle do Meta Bind: reflete o valor da propriedade e grava sim/não ao ser clicado.
+ *
+ * O <input type="checkbox"> real fica escondido mas FOCÁVEL (não `display:none`, que o tiraria
+ * da ordem de tabulação): o trilho é desenhado por cima, e o label em volta faz o clique nele
+ * chegar ao input de graça. Assim foco por teclado, espaço para alternar e leitura por leitor de
+ * tela continuam funcionando sem uma linha de JS. */
+.dash-home-chave {
+	display: inline-flex;
+	align-items: center;
+	cursor: pointer;
+	/* Alinha à esquerda dentro do card, como os outros controles. */
+	align-self: flex-start;
+}
+
+.dash-home-chave-input {
+	position: absolute;
+	opacity: 0;
+	width: 0;
+	height: 0;
+	margin: 0;
+}
+
+.dash-home-chave-trilho {
+	position: relative;
+	display: block;
+	width: 2.6em;
+	height: 1.4em;
+	border-radius: 1em;
+	background: var(--background-modifier-border);
+	transition: background 120ms ease;
+}
+
+/* A bolinha. `left`/`transform` em vez de margem para a animação ser suave nos dois sentidos. */
+.dash-home-chave-trilho::after {
+	content: "";
+	position: absolute;
+	top: 0.2em;
+	left: 0.2em;
+	width: 1em;
+	height: 1em;
+	border-radius: 50%;
+	background: var(--background-primary);
+	transition: transform 120ms ease;
+}
+
+/* Ligado: o trilho assume a COR ESCOLHIDA do botão/quadrante, não o accent do tema — mesmo
+ * princípio do hover (s18) e do foco do campo (s21). */
+.dash-home-chave-input:checked + .dash-home-chave-trilho {
+	background: var(--dash-home-botao-cor, var(--dash-home-cor));
+}
+
+.dash-home-chave-input:checked + .dash-home-chave-trilho::after {
+	transform: translateX(1.2em);
+}
+
+/* O foco precisa ser visível, já que o input em si é invisível: sem isto, navegar por teclado
+ * não mostraria onde se está. */
+.dash-home-chave-input:focus-visible + .dash-home-chave-trilho {
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--dash-home-botao-cor, var(--dash-home-cor)) 40%, transparent);
+}
+
+.dash-home-chave-input:disabled + .dash-home-chave-trilho {
+	opacity: 0.7;
+	cursor: default;
+}

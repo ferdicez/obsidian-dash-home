@@ -20,13 +20,13 @@ import { normalizarEstiloBotao, type EstiloBotao } from "./estilo-botao";
 /**
  * O que um botão faz ao ser clicado.
  *
- * "campo" é o único que NÃO é um clique: em vez de um botão, ele desenha uma caixa de digitação
- * dentro do card, ligada a uma propriedade da nota. É o que substitui o input do Meta Bind —
- * pedido dela: "não vai ser um botão para eu clicar, vai ser um campo de input".
+ * "campo" foi um tipo próprio na 0.9.x e virou a operação "digitar" dentro de "propriedade" na
+ * s23 — ele SÓ preenchia uma propriedade, então ser um tipo à parte duplicava a mesma escolha em
+ * dois lugares. Continua aceito na carga (e convertido) para não quebrar o que ela já montou.
  */
 export type TipoAcao = "nota" | "pasta" | "busca" | "comando" | "propriedade" | "campo";
 
-/** O tipo de caixa de digitação de um botão "campo". */
+/** O formato da caixa de digitação, na operação "digitar". */
 export type TipoCampo = "numero" | "texto" | "data";
 
 /**
@@ -43,8 +43,26 @@ export type TipoCampo = "numero" | "texto" | "data";
  * "escolher" é a mesma ideia levada a N valores, e evita a multiplicação de botões: uma propriedade
  * com seis valores possíveis viraria seis botões no dashboard (um por valor), quando o que se quer
  * é UM botão "Status" que mostra as seis possibilidades na hora do clique.
+ *
+ * As duas últimas NÃO acontecem no clique — elas viram o próprio controle dentro do card:
+ *
+ * - "digitar": uma caixa de texto/número/data ligada à propriedade. Substitui o input do Meta Bind
+ * - "interruptor": uma chavinha que reflete o valor atual e grava sim/não ao ser clicada
+ *
+ * Por isso as duas são EXCLUSIVAS num botão (ver `ehControle`): um botão que já é uma caixa de
+ * digitação não tem clique sobrando para também gravar um "definir".
  */
-export type OperacaoPropriedade = "definir" | "alternar" | "escolher";
+export type OperacaoPropriedade = "definir" | "alternar" | "escolher" | "digitar" | "interruptor";
+
+/**
+ * Se a operação transforma o botão num CONTROLE (caixa, chavinha) em vez de uma ação de clique.
+ *
+ * Ponto único da regra: o painel a usa para bloquear a mistura, e o render para decidir o que
+ * desenhar. Duplicá-la faria as duas telas discordarem sobre o que o botão é.
+ */
+export function ehControle(operacao: OperacaoPropriedade): boolean {
+	return operacao === "digitar" || operacao === "interruptor";
+}
 
 /**
  * O TIPO do valor gravado no frontmatter.
@@ -73,6 +91,15 @@ export interface MudancaPropriedade {
 	 * oferece "puxar do vault" como ponto de partida, mas o que vale é esta lista.
 	 */
 	opcoes?: string[];
+	/**
+	 * O formato da caixa, na operação "digitar": texto, número ou data.
+	 *
+	 * Separado de `tipo` porque aquele tem cinco valores (inclui booleano e vazio) e nenhum dos
+	 * dois se digita numa caixa. Em "digitar", `tipo` é derivado deste na hora de gravar.
+	 */
+	formato?: TipoCampo;
+	/** A dica cinza dentro da caixa vazia ("Number", "dias antes"…). Só no "digitar". */
+	dica?: string;
 }
 
 export interface Botao {
@@ -490,6 +517,7 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 				botao.estilo = normalizarEstiloBotao(botao.estilo);
 				botao.propriedades = normalizarPropriedades(botao.propriedades);
 				botao.campo = normalizarCampo(botao.campo);
+				migrarCampoParaOperacao(botao);
 			}
 		}
 	}
@@ -499,7 +527,7 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 
 const TIPOS_VALIDOS = new Set<string>(["nota", "pasta", "busca", "comando", "propriedade", "campo"]);
 
-const OPERACOES_VALIDAS = new Set<string>(["definir", "alternar", "escolher"]);
+const OPERACOES_VALIDAS = new Set<string>(["definir", "alternar", "escolher", "digitar", "interruptor"]);
 const TIPOS_VALOR_VALIDOS = new Set<string>(["texto", "numero", "booleano", "data", "vazio"]);
 const TIPOS_CAMPO_VALIDOS = new Set<string>(["numero", "texto", "data"]);
 
@@ -530,6 +558,48 @@ export function normalizarCampo(valor: unknown): CampoEntrada | undefined {
 		campo.placeholder = bruto.placeholder;
 	}
 	return campo;
+}
+
+/**
+ * Converte o botão do tipo "campo" (0.9.x) na operação "digitar" de uma propriedade (s23).
+ *
+ * O tipo próprio existiu por duas versões e SÓ preenchia uma propriedade — ou seja, era a mesma
+ * escolha em dois lugares do painel. Ela pediu a unificação, e esta função é o que impede que os
+ * campos já montados sumam junto com o tipo antigo.
+ *
+ * O `botao.campo` NÃO é apagado, pela regra de sempre (a migração de `caminhoNota`, s14): se ela
+ * voltar para a 0.9.x, o campo dela ainda está lá.
+ */
+function migrarCampoParaOperacao(botao: Botao): void {
+	if (botao.tipo !== "campo") return;
+
+	// Vira um botão de propriedade com uma mudança do tipo "digitar".
+	botao.tipo = "propriedade";
+
+	const campo = botao.campo;
+	if (!campo?.nome) return;
+
+	// Se já existe uma mudança para esta propriedade (ela pode ter recarregado duas vezes), não
+	// duplica: a segunda viraria uma caixa gêmea no card.
+	const jaTem = (botao.propriedades ?? []).some(
+		(m) => m.operacao === "digitar" && m.nome === campo.nome,
+	);
+	if (jaTem) return;
+
+	const mudanca: MudancaPropriedade = {
+		id: novoId("p"),
+		nome: campo.nome,
+		operacao: "digitar",
+		// Em "digitar" o tipo real é derivado do formato na hora de gravar; aqui só um valor válido.
+		tipo: "texto",
+		valor: "",
+		formato: campo.tipo,
+	};
+	if (campo.placeholder) mudanca.dica = campo.placeholder;
+
+	// À FRENTE das outras: um botão que virou caixa de digitação tem esta como razão de existir, e
+	// `ehControle` olha a primeira mudança para decidir o que desenhar.
+	botao.propriedades = [mudanca, ...(botao.propriedades ?? [])];
 }
 
 /**
@@ -579,6 +649,13 @@ export function normalizarPropriedades(valor: unknown): MudancaPropriedade[] | u
 			const opcoes = limparOpcoes(bruto.opcoes);
 			if (opcoes.length > 0) mudanca.opcoes = opcoes;
 		}
+
+		// `formato` e `dica` seguem a mesma regra das opções: sobrevivem em qualquer operação, para
+		// espiar o "definir" não apagar o que ela configurou no "digitar".
+		if (typeof bruto.formato === "string" && TIPOS_CAMPO_VALIDOS.has(bruto.formato)) {
+			mudanca.formato = bruto.formato as TipoCampo;
+		}
+		if (typeof bruto.dica === "string" && bruto.dica.trim()) mudanca.dica = bruto.dica;
 
 		saida.push(mudanca);
 	}

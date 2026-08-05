@@ -54,6 +54,21 @@ export function converterValor(texto: string, tipo: TipoValorPropriedade): unkno
 const VERDADEIROS = new Set(["true", "sim", "1", "verdadeiro", "yes", "on"]);
 
 /**
+ * Se um valor VINDO DO FRONTMATTER conta como verdadeiro — a pergunta que decide se o interruptor
+ * nasce ligado.
+ *
+ * `Boolean(valor)` não serve: o YAML pode ter o booleano `true`, mas também a string "sim", "não"
+ * ou o número 1 — e QUALQUER string não vazia passa no teste de verdade do JavaScript, inclusive
+ * "não". Daí a mesma lista de `converterValor`, para os dois lados concordarem sobre o que é sim.
+ */
+export function ehVerdadeiro(valor: unknown): boolean {
+	if (typeof valor === "boolean") return valor;
+	if (typeof valor === "number") return valor !== 0;
+	if (typeof valor === "string") return VERDADEIROS.has(valor.trim().toLowerCase());
+	return false;
+}
+
+/**
  * A data de hoje no formato que o Obsidian usa nas propriedades de data: `AAAA-MM-DD`, ou
  * `AAAA-MM-DDTHH:mm` para data-e-hora.
  *
