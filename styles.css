@@ -201,10 +201,34 @@
 	grid-template-columns: repeat(var(--dash-home-botao-colunas, 2), minmax(0, 1fr));
 }
 
-/* Chips: fluem na largura disponível, cada um do tamanho do próprio conteúdo. */
+/* Lado a lado: os botões dividem a largura do card IGUALMENTE e a ocupam por inteiro.
+ *
+ * Antes cada um tinha a largura do próprio conteúdo, e o que sobrava ficava vago à direita —
+ * queixa dela: "ele não ocupa o espaço todo do quadrante, fica sobrando". Numa fileira de ícones
+ * o efeito era pior, porque um botão só-ícone é estreito e a sobra, enorme.
+ *
+ * `flex: 1 1 0` (e não `flex: 1`, cujo `flex-basis` é `auto`) é o que faz a divisão ser IGUAL em
+ * vez de proporcional ao texto: com basis `auto`, "Arquivar tudo" ficaria bem mais largo que "Ok".
+ * Escolha dela — fileira regular, como o "2 por linha" já fazia.
+ *
+ * `min-width: 0` porque o padrão do flex é `auto`, que impede o item de encolher abaixo do próprio
+ * conteúdo: sem isso, quatro botões de texto longo estouram o card em vez de dividir a linha. */
 .dash-home-botoes.is-arranjo-chips {
 	flex-direction: row;
 	flex-wrap: wrap;
+}
+
+.dash-home-botoes.is-arranjo-chips > .dash-home-botao,
+.dash-home-botoes.is-arranjo-chips > .dash-home-campo {
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+/* Com a largura dividida, o texto centralizado é o que faz a fileira parecer regular — alinhado à
+ * esquerda, cada rótulo flutuaria numa caixa larga demais. Só o padrão: uma escolha explícita de
+ * alinhamento (`--dash-home-botao-alinha`) continua valendo, porque é dela. */
+.dash-home-botoes.is-arranjo-chips > .dash-home-botao {
+	justify-content: var(--dash-home-botao-alinha, center);
 }
 
 .dash-home-botao {

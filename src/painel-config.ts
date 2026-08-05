@@ -2326,7 +2326,9 @@ const NOME_ARRANJO: Record<ArranjoBotoes, string> = {
 	coluna: "Um embaixo do outro",
 	grade2: "Dois por linha",
 	grade3: "Três por linha",
-	chips: "Lado a lado (fluindo)",
+	// "preenchendo a linha" e não "fluindo": desde a s22 os botões dividem a largura do card em
+	// partes iguais, então o nome antigo descreveria o comportamento anterior.
+	chips: "Lado a lado (preenchendo a linha)",
 };
 
 const NOME_FORMA: Record<FormaBotao, string> = {
