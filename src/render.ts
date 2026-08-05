@@ -371,8 +371,18 @@ function renderizarControle(
 		caixa.style.setProperty(prop, valor);
 	}
 
-	// O rótulo fica ACIMA do controle, como no Meta Bind do print dela: o nome da propriedade é o
-	// título, o controle vem logo abaixo.
+	// As MESMAS classes de pintura e forma do botão comum: pedido dela, "quando eu selecionar o
+	// modo de colorir fundo, esse quadrado vai pegar toda a extensão do botão, incluindo o
+	// interruptor e a caixa de digitar". Reusar as classes (em vez de duplicar as regras) é o que
+	// garante que uma pintura nova valha nos dois sem ser escrita duas vezes.
+	caixa.addClass(`is-pintura-${estilo.pintura}`);
+	caixa.addClass(`is-forma-${estilo.forma}`);
+	caixa.toggleClass("is-letra-texto", estilo.corLetra === "texto");
+	caixa.toggleClass("is-destaque", estilo.destaque);
+
+	// O rótulo fica À ESQUERDA e o controle à direita, na mesma linha — pedido dela: "o nome do
+	// botão e o ícone apareçam do lado direito e não em cima, como se fosse um texto normal, só
+	// que com o toggle ou a caixinha de digitar do lado".
 	if (botao.texto) {
 		const rotulo = caixa.createDiv({ cls: "dash-home-campo-rotulo" });
 		if (botao.icone) setIcon(rotulo.createSpan({ cls: "dash-home-campo-icone" }), botao.icone);

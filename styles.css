@@ -272,7 +272,8 @@
 
 /* "neutro" é o padrão histórico: fundo do tema, cor só no ícone. Nada a declarar. */
 
-.dash-home-botao.is-pintura-fundo {
+.dash-home-botao.is-pintura-fundo,
+.dash-home-campo.is-pintura-fundo {
 	background: var(--dash-home-botao-fundo, var(--background-primary));
 }
 
@@ -284,7 +285,8 @@
 	background: color-mix(in srgb, var(--dash-home-botao-cor, var(--dash-home-cor)) 26%, var(--background-primary));
 }
 
-.dash-home-botao.is-pintura-contorno {
+.dash-home-botao.is-pintura-contorno,
+.dash-home-campo.is-pintura-contorno {
 	background: transparent;
 	border-color: var(--dash-home-botao-cor, var(--dash-home-cor));
 }
@@ -298,12 +300,14 @@
 /* Sólido: a cor toma o botão inteiro, e o texto passa a ser o que contrasta com ELA, não com o
  * fundo do tema. `--text-on-accent` é a variável que o Obsidian usa para isso nos próprios botões
  * de destaque, então acompanha tema claro/escuro sem um segundo conjunto de regras. */
-.dash-home-botao.is-pintura-solido {
+.dash-home-botao.is-pintura-solido,
+.dash-home-campo.is-pintura-solido {
 	background: var(--dash-home-botao-cor, var(--dash-home-cor));
 	color: var(--text-on-accent);
 }
 
-.dash-home-botao.is-pintura-solido .dash-home-botao-icone {
+.dash-home-botao.is-pintura-solido .dash-home-botao-icone,
+.dash-home-campo.is-pintura-solido .dash-home-campo-icone {
 	color: var(--text-on-accent);
 }
 
@@ -323,7 +327,8 @@
  * A classe repetida (0,2,0) é o que faz esta regra vencer `.dash-home-botao.is-pintura-solido`,
  * que também é 0,2,0 mas vem antes — e o ícone precisa do mesmo tratamento, senão ficaria branco
  * sozinho. Mesmo truque de especificidade do `.dash-home-swatch.dash-home-swatch` (s4). */
-.dash-home-botao.is-letra-texto.is-letra-texto {
+.dash-home-botao.is-letra-texto.is-letra-texto,
+.dash-home-campo.is-letra-texto.is-letra-texto {
 	color: var(--text-normal);
 }
 
@@ -918,19 +923,41 @@
  *
  * Não herda `.dash-home-botao` de propósito — hover que muda de cor, cursor de mão e padding de
  * botão são retorno visual de "clique aqui", e aqui o clique não faz nada: ela vai DIGITAR. */
+/* A LINHA inteira: rótulo à esquerda, controle à direita.
+ *
+ * Era coluna (rótulo em cima) até a s24. Ela pediu na horizontal — "como se fosse um texto normal,
+ * só que com o toggle ou a caixinha de digitar do lado" — e, junto, que a pintura escolhida
+ * envolvesse tudo. Por isso o padding, a borda e o raio saem daqui e não do input: a moldura é da
+ * linha, e é ela que as classes `is-pintura-*` do botão comum colorem.
+ *
+ * `border: 1px solid transparent` mantém a altura idêntica entre as pinturas — sem a borda
+ * invisível, o card pularia 2px ao trocar de neutro para contorno. */
 .dash-home-campo {
 	display: flex;
-	flex-direction: column;
-	gap: 0.35em;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.6em;
 	min-width: 0;
+	padding: var(--dash-home-botao-altura, 8px) 0.7em;
+	border-radius: var(--dash-home-botao-radius, var(--radius-s));
+	border: 1px solid transparent;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: var(--dash-home-botao-fonte);
 }
 
+/* O rótulo usa a cor do texto normal (e não a esmaecida de antes): agora ele é o texto do botão,
+ * não uma legenda acima dele. `min-width: 0` + ellipsis para um nome longo não empurrar o controle
+ * para fora da linha. */
 .dash-home-campo-rotulo {
 	display: flex;
 	align-items: center;
-	gap: 0.4em;
-	font-size: var(--font-ui-smaller);
-	color: var(--text-muted);
+	gap: 0.5em;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .dash-home-campo-icone {
@@ -944,18 +971,35 @@
 	height: var(--dash-home-botao-icone, 16px);
 }
 
-/* `width: 100%` + `min-width: 0` para a caixa caber na coluna do grid: o input tem largura
- * intrínseca própria (o `size` padrão do HTML), que sem isto estoura o card num arranjo de 2 ou 3
- * por linha. */
+/* A caixa agora divide a linha com o rótulo, então NÃO ocupa 100%: `flex: 0 1 8em` dá a ela uma
+ * largura de partida confortável que encolhe quando o nome é longo. `min-width: 0` é o que permite
+ * esse encolhimento — o padrão `auto` do flex trava no tamanho intrínseco do input e estoura o
+ * card num arranjo de 2 ou 3 por linha.
+ *
+ * Sem moldura própria: a borda e o fundo são da linha inteira, senão haveria uma caixa dentro de
+ * outra caixa quando a pintura estiver ligada. */
 .dash-home-campo-input {
-	width: 100%;
+	flex: 0 1 8em;
 	min-width: 0;
-	padding: var(--dash-home-botao-altura, 8px) 0.7em;
-	border-radius: var(--dash-home-botao-radius, var(--radius-s));
+	/* A altura da LINHA é a do miolo mais alto, então o input tem que ser contido: com a altura
+	 * natural dele (25,6px) o controle ficava ~7px mais alto que um botão comum ao lado, e a
+	 * fileira saía irregular. 1.15em ≈ 18px, a mesma altura do rótulo. Medido em Chromium (s24). */
+	padding: 0 0.4em;
+	height: 1.15em;
+	line-height: 1.15em;
+	border-radius: calc(var(--dash-home-botao-radius, var(--radius-s)) * 0.6);
 	border: 1px solid var(--background-modifier-border);
 	background: var(--background-primary);
 	color: var(--text-normal);
-	font-size: var(--dash-home-botao-fonte);
+	font-size: inherit;
+	text-align: right;
+}
+
+/* Data e número precisam de mais espaço: o seletor de data traz o ícone do calendário e as
+ * setinhas do número comem largura útil. */
+.dash-home-campo-input[type="date"] {
+	flex-basis: 9.5em;
+	text-align: left;
 }
 
 /* O foco usa a cor do quadrante/botão, e não o accent do tema: é o mesmo princípio do hover
@@ -997,11 +1041,14 @@
 	margin: 0;
 }
 
+/* A chavinha é medida em `em` para acompanhar o tamanho da letra do botão. A altura fica em
+ * 1.15em (e não 1.4em) porque a LINHA do controle é tão alta quanto o seu miolo mais alto: com o
+ * trilho maior, a linha do interruptor ficava mais alta que a de um botão comum ao lado. */
 .dash-home-chave-trilho {
 	position: relative;
 	display: block;
-	width: 2.6em;
-	height: 1.4em;
+	width: 2.1em;
+	height: 1.15em;
 	border-radius: 1em;
 	background: var(--background-modifier-border);
 	transition: background 120ms ease;
@@ -1011,10 +1058,10 @@
 .dash-home-chave-trilho::after {
 	content: "";
 	position: absolute;
-	top: 0.2em;
-	left: 0.2em;
-	width: 1em;
-	height: 1em;
+	top: 0.175em;
+	left: 0.175em;
+	width: 0.8em;
+	height: 0.8em;
 	border-radius: 50%;
 	background: var(--background-primary);
 	transition: transform 120ms ease;
@@ -1027,7 +1074,7 @@
 }
 
 .dash-home-chave-input:checked + .dash-home-chave-trilho::after {
-	transform: translateX(1.2em);
+	transform: translateX(0.95em);
 }
 
 /* O foco precisa ser visível, já que o input em si é invisível: sem isto, navegar por teclado
@@ -1040,3 +1087,59 @@
 	opacity: 0.7;
 	cursor: default;
 }
+
+/* ── O miolo do controle sobre uma pintura forte ────────────────────────────────────────────
+ *
+ * Com "cor cheia", a linha inteira fica na cor escolhida — e o input branco padrão viraria um
+ * retângulo gritante no meio dela. Aqui ele passa a ser um vidro fosco: escurece levemente a
+ * própria cor de fundo em vez de trocá-la por branco.
+ *
+ * `currentColor` para o texto: no sólido a linha já definiu `--text-on-accent`, e no letra-texto,
+ * a cor normal — o input acompanha os dois sem uma regra para cada. */
+.dash-home-campo.is-pintura-solido .dash-home-campo-input {
+	background: color-mix(in srgb, var(--dash-home-botao-cor, var(--dash-home-cor)) 70%, var(--background-primary));
+	border-color: color-mix(in srgb, currentColor 35%, transparent);
+	color: currentColor;
+}
+
+/* O placeholder também: sem isto ele fica no cinza do tema e some sobre a cor. */
+.dash-home-campo.is-pintura-solido .dash-home-campo-input::placeholder {
+	color: color-mix(in srgb, currentColor 60%, transparent);
+}
+
+/* O trilho da chavinha DESLIGADA sobre a cor cheia: o cinza do tema desapareceria. */
+.dash-home-campo.is-pintura-solido .dash-home-chave-trilho {
+	background: color-mix(in srgb, currentColor 30%, transparent);
+}
+
+/* Ligada sobre a cor cheia, o trilho não pode ser a MESMA cor do fundo (sumiria). Vira a cor de
+ * contraste, que é a mesma que o texto está usando ali. */
+.dash-home-campo.is-pintura-solido .dash-home-chave-input:checked + .dash-home-chave-trilho {
+	background: currentColor;
+}
+
+.dash-home-campo.is-pintura-solido .dash-home-chave-input:checked + .dash-home-chave-trilho::after {
+	background: var(--dash-home-botao-cor, var(--dash-home-cor));
+}
+
+/* No contorno e no fundo tingido a linha continua clara, então só o input precisa de um fundo que
+ * o distinga da moldura sem brigar com a cor dela. */
+.dash-home-campo.is-pintura-contorno .dash-home-campo-input,
+.dash-home-campo.is-pintura-fundo .dash-home-campo-input {
+	background: color-mix(in srgb, var(--background-primary) 75%, transparent);
+	border-color: color-mix(in srgb, var(--dash-home-botao-cor, var(--dash-home-cor)) 35%, transparent);
+}
+
+/* Destaque: o mesmo peso de fonte do botão em destaque, para o controle não parecer de outra
+ * família quando os dois estão lado a lado no card. */
+.dash-home-campo.is-destaque {
+	font-weight: var(--font-semibold);
+}
+
+/* Forma pílula: o raio grande vale para a linha inteira. */
+.dash-home-campo.is-forma-pilula {
+	border-radius: 999px;
+}
+
+/* "Quadrado (só ícone)" não faz sentido num controle — ele PRECISA da largura para a caixa e para
+ * o rótulo. A forma é ignorada de propósito, em vez de espremer o campo num quadrado inutilizável. */
