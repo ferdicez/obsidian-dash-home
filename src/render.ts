@@ -135,14 +135,23 @@ function renderizarQuadrante(
 		cabecalho.createSpan({ text: quadrante.titulo });
 	}
 
-	if (quadrante.conteudo === "markdown") {
-		renderizarMarkdown(card, quadrante, opcoes);
-		return;
+	// "ambos" desenha o markdown E os botões, nessa ordem: o texto explica, os botões agem. A ordem
+	// é fixa de propósito — botões acima de um parágrafo que os descreve leria ao contrário.
+	// O separador já saiu no início da função, então aqui só restam botoes/markdown/ambos.
+	const comMarkdown = quadrante.conteudo === "markdown" || quadrante.conteudo === "ambos";
+	const comBotoes = quadrante.conteudo !== "markdown";
+
+	if (comMarkdown) {
+		renderizarMarkdown(card, quadrante, opcoes, comBotoes);
 	}
+
+	if (!comBotoes) return;
 
 	const lista = card.createDiv({ cls: "dash-home-botoes" });
 	if (quadrante.botoes.length === 0) {
-		lista.createDiv({ cls: "dash-home-botao-vazio", text: "sem botões" });
+		// Num quadrante que também tem texto, "sem botões" seria ruído embaixo do conteúdo dela —
+		// o card já mostra alguma coisa. O aviso só vale quando o card ficaria completamente vazio.
+		if (!comMarkdown) lista.createDiv({ cls: "dash-home-botao-vazio", text: "sem botões" });
 		return;
 	}
 
@@ -207,11 +216,25 @@ function renderizarSeparador(grid: HTMLElement, quadrante: Quadrante): void {
  * assíncrono e cria sub-componentes (uma Base embutida abre consultas), o que é caro demais para
  * um preview que se redesenha a cada tecla — e, sem um Component dono, vazaria.
  */
-function renderizarMarkdown(card: HTMLElement, quadrante: Quadrante, opcoes: OpcoesRender): void {
+function renderizarMarkdown(
+	card: HTMLElement,
+	quadrante: Quadrante,
+	opcoes: OpcoesRender,
+	comBotoesAbaixo = false,
+): void {
 	const corpo = card.createDiv({ cls: "dash-home-markdown" });
+	// Só quando há botões junto: a margem que separa o texto deles não deve existir quando o
+	// markdown é o card inteiro.
+	corpo.toggleClass("is-com-botoes", comBotoesAbaixo);
 	const fonte = quadrante.markdown?.trim() ?? "";
 
 	if (!fonte) {
+		// Com botões abaixo, um texto vazio não é um card vazio: os botões já preenchem o quadrante,
+		// e o aviso de "escreva algo" seria um alerta para um estado que ela pode ter escolhido.
+		if (comBotoesAbaixo) {
+			corpo.remove();
+			return;
+		}
 		corpo.createDiv({
 			cls: "dash-home-botao-vazio",
 			text: opcoes.miniatura ? "conteúdo livre" : "Quadrante vazio — escreva algo em Configurações → Dash Home.",

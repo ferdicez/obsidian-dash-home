@@ -86,14 +86,17 @@ export function gerarBloco(
 			continue;
 		}
 
-		if (quadrante.conteudo === "markdown") {
-			linhas.push(`    conteudo: markdown`);
+		// "ambos" grava o markdown E os botões: por isso o markdown sai aqui, e só o tipo "markdown"
+		// puro encerra o quadrante. Esquecer isto faria o bloco descrever metade do quadrante — a
+		// mesma falha do separador (s9) e do estilo (s11).
+		if (quadrante.conteudo === "markdown" || quadrante.conteudo === "ambos") {
+			linhas.push(`    conteudo: ${quadrante.conteudo}`);
 			// Em uma linha só, com escapes: o markdown pode ter quebras de linha, aspas e — o
 			// caso perigoso — três crases, que num bloco literal fechariam o ```dash-home no meio
 			// e destruiriam o resto da nota. `JSON.stringify` transforma tudo isso em "\n" e
 			// caracteres escapados, então o conteúdo nunca influencia a estrutura do bloco.
 			linhas.push(`    markdown: ${aspas(quadrante.markdown ?? "")}`);
-			continue;
+			if (quadrante.conteudo === "markdown") continue;
 		}
 
 		if (quadrante.botoes.length === 0) {

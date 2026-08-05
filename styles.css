@@ -230,8 +230,16 @@
 	font-size: var(--dash-home-botao-fonte);
 }
 
+/* O hover acompanha a COR ESCOLHIDA, não o cinza do tema.
+ *
+ * Antes era `--background-modifier-hover` — um cinza fixo. Num botão vermelho ou verde, passar o
+ * mouse apagava a cor em vez de reforçá-la: o retorno visual contradizia a escolha dela.
+ *
+ * `color-mix` dilui a cor no fundo do tema, então o realce funciona igual no claro e no escuro, e
+ * vale tanto para cor do tema quanto para hex da paleta. A porcentagem é baixa (12%) porque este é
+ * o hover do botão NEUTRO — a cor aparece como um tingimento, não como pintura. */
 .dash-home-botao:hover {
-	background: var(--background-modifier-hover);
+	background: color-mix(in srgb, var(--dash-home-botao-cor, var(--dash-home-cor)) 12%, var(--background-primary));
 	border-color: var(--dash-home-botao-cor, var(--dash-home-cor));
 	text-decoration: none;
 }
@@ -244,9 +252,23 @@
 	background: var(--dash-home-botao-fundo, var(--background-primary));
 }
 
+/* No fundo tingido a cor JÁ está lá: o hover intensifica o mesmo tom em vez de trocá-lo por outro.
+   `--dash-home-botao-fundo` é a mistura que `variaveisDoBotao` calcula (14% normal, 28% em
+   destaque); aqui subimos para 26% mantendo a proporção — a classe repetida (0,2,0) é o que faz
+   esta regra vencer a `:hover` base, que também é 0,2,0 mas vem antes. */
+.dash-home-botao.is-pintura-fundo.is-pintura-fundo:hover {
+	background: color-mix(in srgb, var(--dash-home-botao-cor, var(--dash-home-cor)) 26%, var(--background-primary));
+}
+
 .dash-home-botao.is-pintura-contorno {
 	background: transparent;
 	border-color: var(--dash-home-botao-cor, var(--dash-home-cor));
+}
+
+/* No contorno o fundo é transparente por definição: o hover preenche de leve, para o botão
+   "acender" sem deixar de ser um contorno. */
+.dash-home-botao.is-pintura-contorno.is-pintura-contorno:hover {
+	background: color-mix(in srgb, var(--dash-home-botao-cor, var(--dash-home-cor)) 16%, transparent);
 }
 
 /* Sólido: a cor toma o botão inteiro, e o texto passa a ser o que contrasta com ELA, não com o
@@ -261,9 +283,12 @@
 	color: var(--text-on-accent);
 }
 
-.dash-home-botao.is-pintura-solido:hover {
-	background: var(--dash-home-botao-cor, var(--dash-home-cor));
-	filter: brightness(1.1);
+/* No sólido a cor já ocupa tudo; o hover só a aprofunda um pouco. `brightness` seria mais simples,
+   mas clareia no tema escuro e no claro do mesmo jeito — num amarelo pastel, clarear ainda mais
+   quase apaga o botão. Misturar com a cor de TEXTO do tema escurece no claro e clareia no escuro,
+   que é o realce esperado nos dois. A classe repetida vence a `:hover` base. */
+.dash-home-botao.is-pintura-solido.is-pintura-solido:hover {
+	background: color-mix(in srgb, var(--dash-home-botao-cor, var(--dash-home-cor)) 85%, var(--text-normal));
 }
 
 /* ── A cor da letra ─────────────────────────────────────────────────────────────────────
@@ -768,6 +793,13 @@
    estourar o grid e empurrar as outras colunas. */
 .dash-home-markdown {
 	overflow-x: auto;
+}
+
+/* Texto + botões no mesmo card: sem esta margem o primeiro botão encosta na última linha do
+   texto e os dois viram um bloco só. Vale só quando há botões abaixo — quando o markdown é o
+   card inteiro, a margem sobraria no rodapé. */
+.dash-home-markdown.is-com-botoes {
+	margin-bottom: 0.7em;
 }
 
 .dash-home-markdown-previa {

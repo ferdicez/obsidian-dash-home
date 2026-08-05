@@ -129,8 +129,12 @@ export interface Quadrante {
 	 * "separador" é um caso à parte: não é um card, e sim um respiro entre linhas — uma linha
 	 * divisória, um título de seção, ou só espaço em branco. Ocupa sempre a linha inteira, porque
 	 * um separador que dividisse só metade da largura não separaria nada.
+	 *
+	 * "ambos" mostra o markdown E os botões no mesmo card, nessa ordem. Existe porque "botões" e
+	 * "conteúdo livre" eram excludentes, e uma explicação acima dos botões — o uso mais natural de
+	 * um quadrante — exigia dois quadrantes lado a lado fingindo ser um.
 	 */
-	conteudo?: "botoes" | "markdown" | "separador";
+	conteudo?: "botoes" | "markdown" | "separador" | "ambos";
 	/** Aparência do separador, quando `conteudo === "separador"`. */
 	separador?: {
 		/** Texto opcional ao lado da linha (ou no lugar dela, se `linha` for false). */

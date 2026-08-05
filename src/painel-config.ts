@@ -520,7 +520,7 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				? "separador"
 				: ehMarkdown
 					? "conteúdo livre"
-					: `${quadrante.botoes.length} ${quadrante.botoes.length === 1 ? "botão" : "botões"}`,
+					: `${quadrante.conteudo === "ambos" ? "texto + " : ""}${quadrante.botoes.length} ${quadrante.botoes.length === 1 ? "botão" : "botões"}`,
 			aninhado: true,
 		});
 
@@ -555,7 +555,7 @@ export class PainelConfigDashHome extends PluginSettingTab {
 
 			const secaoConteudo = criarAcordeao(corpo, {
 				chave: `${quadrante.id}:conteudo`,
-				titulo: ehMarkdown ? "Conteúdo" : "Botões",
+				titulo: ehMarkdown ? "Conteúdo" : quadrante.conteudo === "ambos" ? "Texto e botões" : "Botões",
 				aninhado: true,
 				abertoPorPadrao: true,
 			});
@@ -563,10 +563,11 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			secaoConteudo.sePreenchido((corpoConteudo) => {
 				new Setting(corpoConteudo)
 					.setName("Tipo de conteúdo")
-					.setDesc("Botões, um espaço livre para escrever, ou um separador entre linhas.")
+					.setDesc("Botões, texto livre, os dois juntos, ou um separador entre linhas.")
 					.addDropdown((drop) => {
 						drop.addOption("botoes", "Botões");
 						drop.addOption("markdown", "Conteúdo livre");
+						drop.addOption("ambos", "Texto + botões");
 						drop.addOption("separador", "Separador / espaço");
 						drop.setValue(quadrante.conteudo ?? "botoes");
 						drop.onChange(async (valor) => {
@@ -574,7 +575,7 @@ export class PainelConfigDashHome extends PluginSettingTab {
 							// atrás tem que devolver o que existia. O que não é do tipo atual
 							// simplesmente não é renderizado.
 							quadrante.conteudo =
-								valor === "botoes" ? undefined : (valor as "markdown" | "separador");
+								valor === "botoes" ? undefined : (valor as "markdown" | "separador" | "ambos");
 							await this.aplicar();
 						});
 					});
@@ -584,9 +585,18 @@ export class PainelConfigDashHome extends PluginSettingTab {
 					return;
 				}
 
-				if (ehMarkdown) {
+				// Em "ambos" os dois editores aparecem, na mesma ordem em que o quadrante é
+				// desenhado: primeiro o texto, depois os botões.
+				if (ehMarkdown || quadrante.conteudo === "ambos") {
 					this.desenharEditorMarkdown(corpoConteudo, quadrante);
-					return;
+				}
+
+				if (ehMarkdown) return;
+
+				if (quadrante.conteudo === "ambos") {
+					// Um cabeçalho para separar as duas metades: sem ele o "+ Novo botão" apareceria
+					// logo abaixo do campo de texto, sem dizer que começou outra coisa.
+					corpoConteudo.createEl("h4", { text: "Botões" });
 				}
 
 				if (quadrante.botoes.length === 0) {
