@@ -1,7 +1,7 @@
 import { Notice, TFile, TFolder, normalizePath, type App } from "obsidian";
 import type { Dashboard } from "./dados";
-import type { EstiloQuadrante } from "./estilo";
-import type { EstiloBotao } from "./estilo-botao";
+import { estiloAtivo, type EstiloQuadrante } from "./estilo";
+import { estiloBotaoAtivo, type EstiloBotao } from "./estilo-botao";
 
 /**
  * A ponte entre o data.json e o vault: gera a nota do dashboard e a mantém atualizada.
@@ -75,12 +75,18 @@ export function gerarBloco(
 		// O estilo próprio do quadrante (o que ele sobrescreve do global). Faltava aqui: o bloco
 		// descrevia o dashboard sem a aparência, então não servia como registro do que foi
 		// configurado. Só sai o que o quadrante realmente define — o herdado não é repetido.
-		for (const linha of linhasDeEstilo(entradasDefinidas(quadrante.estilo), "    ")) {
+		//
+		// Passa por `estiloAtivo` porque um quadrante que voltou a herdar ainda GUARDA os ajustes
+		// dele: escrevê-los aqui faria o bloco descrever uma aparência que o dashboard não tem.
+		const estiloDoQuadrante = estiloAtivo(quadrante.personalizaEstilo, quadrante.estilo);
+		for (const linha of linhasDeEstilo(entradasDefinidas(estiloDoQuadrante), "    ")) {
 			linhas.push(linha);
 		}
 
-		// A aparência dos botões deste quadrante — a camada do meio da herança.
-		const entradasBotao = entradasDefinidas(quadrante.estiloBotao);
+		// A aparência dos botões deste quadrante — a camada do meio da herança. Mesma regra.
+		const entradasBotao = entradasDefinidas(
+			estiloBotaoAtivo(quadrante.personalizaEstiloBotao, quadrante.estiloBotao),
+		);
 		if (entradasBotao.length > 0) {
 			linhas.push(`    estiloBotao:`);
 			for (const linha of linhasDeEstilo(entradasBotao, "      ")) linhas.push(linha);

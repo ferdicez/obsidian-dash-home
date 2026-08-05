@@ -106,6 +106,20 @@ export const ESTILO_BOTAO_PADRAO: Required<Omit<EstiloBotao, "cor" | "tamanhoFon
 export type EstiloBotaoResolvido = typeof ESTILO_BOTAO_PADRAO;
 
 /**
+ * O estilo de botão que o quadrante REALMENTE aplica, considerando "personalizar ou herdar".
+ *
+ * Gêmea de `estiloAtivo` em `estilo.ts`, e pelo mesmo motivo: os ajustes de um quadrante que
+ * voltou a herdar continuam guardados (para ela não perder trabalho ao alternar), mas precisam
+ * ficar invisíveis para quem desenha. Ponto único onde a flag é interpretada.
+ */
+export function estiloBotaoAtivo(
+	personaliza: boolean | undefined,
+	estilo: EstiloBotao | undefined,
+): EstiloBotao | undefined {
+	return personaliza ? estilo : undefined;
+}
+
+/**
  * Aplica a herança das três camadas. O que a camada de cima não define, vem da de baixo:
  * padrão de fábrica → global → quadrante → botão.
  */

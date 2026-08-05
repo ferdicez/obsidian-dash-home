@@ -110,10 +110,23 @@ export interface Quadrante {
 	/** Aparência só deste quadrante; o que não define, herda do estilo global. */
 	estilo?: EstiloQuadrante;
 	/**
+	 * Se este quadrante personaliza a própria aparência ou herda o global.
+	 *
+	 * Existe SEPARADA dos valores em `estilo` de propósito: ao voltar para "herdar", os ajustes
+	 * que ela fez continuam guardados ali e reaparecem se ela personalizar de novo. Sem a flag, a
+	 * única forma de voltar a herdar seria apagar `estilo` — e um clique perderia o trabalho.
+	 *
+	 * `undefined` = herda (o padrão). Quem lê a aparência tem que consultar isto ANTES de aplicar
+	 * `estilo`, senão os valores adormecidos vazariam para o dashboard — ver `estiloAtivo()`.
+	 */
+	personalizaEstilo?: boolean;
+	/**
 	 * Aparência dos botões DESTE quadrante; o que não define, herda do global — e cada botão
 	 * ainda pode sobrescrever isto. Camada do meio da herança de três níveis.
 	 */
 	estiloBotao?: EstiloBotao;
+	/** O mesmo contrato de `personalizaEstilo`, para a aparência dos botões deste quadrante. */
+	personalizaEstiloBotao?: boolean;
 	/**
 	 * Quantas colunas do grid este quadrante ocupa. `undefined` = 1 (o padrão).
 	 * "cheio" ocupa a linha inteira, seja qual for o número de colunas do dashboard.
@@ -422,6 +435,20 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 		if (!Array.isArray(dash.quadrantes)) dash.quadrantes = [];
 		for (const quad of dash.quadrantes) {
 			if (quad.estilo && typeof quad.estilo !== "object") delete quad.estilo;
+
+			// A chave "personaliza ou herda". Um valor que não é booleano cai em `undefined`
+			// (= herda), o estado neutro — a mesma regra de `normalizarEstiloBotao`: campo inválido
+			// é REMOVIDO, não corrigido, para não prender a camada num valor que ela não escolheu.
+			//
+			// Um data.json anterior a este campo vem sem ele, e por isso todo quadrante nasceria
+			// herdando — apagando a aparência que ela já tinha configurado. Daí a compatibilidade:
+			// quem já tem estilo próprio gravado É porque personalizou.
+			if (typeof quad.personalizaEstilo !== "boolean") {
+				quad.personalizaEstilo = temAlgumCampo(quad.estilo) ? true : undefined;
+			}
+			if (typeof quad.personalizaEstiloBotao !== "boolean") {
+				quad.personalizaEstiloBotao = temAlgumCampo(quad.estiloBotao) ? true : undefined;
+			}
 			// `undefined` apaga a chave na serialização — não fica `estiloBotao: null` no data.json.
 			quad.estiloBotao = normalizarEstiloBotao(quad.estiloBotao);
 			quad.largura = limitarLarguraQuadrante(quad.largura, dash.colunas);
@@ -540,6 +567,20 @@ export function criarMudancaPropriedade(botao: Botao): MudancaPropriedade {
 
 export async function salvarDados(plugin: Plugin, dados: DadosDashHome): Promise<void> {
 	await plugin.saveData(dados);
+}
+
+/**
+ * Se um objeto de estilo define ALGUM campo de fato.
+ *
+ * Serve à compatibilidade da flag "personaliza ou herda": num data.json anterior a ela, ter estilo
+ * gravado é a evidência de que a usuária personalizou aquele quadrante. Um objeto vazio (`{}`) não
+ * conta — o painel cria `{}` só de abrir a seção, e isso não é escolha dela.
+ *
+ * `!== undefined` e não truthiness: `radius: 0` e `tituloColorido: false` são escolhas válidas.
+ */
+function temAlgumCampo(estilo: object | undefined): boolean {
+	if (!estilo || typeof estilo !== "object") return false;
+	return Object.values(estilo).some((v) => v !== undefined);
 }
 
 /**

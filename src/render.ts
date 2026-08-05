@@ -1,9 +1,10 @@
 import { MarkdownRenderer, setIcon, type App, type Component } from "obsidian";
 import { corCss, type Botao, type Dashboard, type DadosDashHome, type Quadrante } from "./dados";
-import { bordasDoQuadrante, resolverEstilo, variaveisDoQuadrante } from "./estilo";
+import { bordasDoQuadrante, estiloAtivo, resolverEstilo, variaveisDoQuadrante } from "./estilo";
 import {
 	colunasDoArranjo,
 	ehSoIcone,
+	estiloBotaoAtivo,
 	resolverArranjo,
 	resolverEstiloBotao,
 	variaveisDoBotao,
@@ -107,7 +108,9 @@ function renderizarQuadrante(
 	}
 
 	const card = grid.createDiv({ cls: "dash-home-quadrante" });
-	const estilo = resolverEstilo(dados.estiloGlobal, quadrante.estilo);
+	// `estiloAtivo` (e não `quadrante.estilo` direto) porque um quadrante que voltou a herdar ainda
+	// guarda os ajustes dele no objeto — eles ficam adormecidos até ela personalizar de novo.
+	const estilo = resolverEstilo(dados.estiloGlobal, estiloAtivo(quadrante.personalizaEstilo, quadrante.estilo));
 
 	// A fatia do grid que este quadrante ocupa. "cheio" usa `1 / -1` (da primeira à última linha
 	// de grade), que vale para qualquer número de colunas sem precisar saber quantas são.
@@ -157,7 +160,8 @@ function renderizarQuadrante(
 
 	// O arranjo é do conjunto, não do botão: quantos cabem por linha é propriedade da lista. Por
 	// isso sai das duas camadas de cima (global → quadrante) e é aplicado no contêiner.
-	const arranjo = resolverArranjo(dados.estiloBotaoGlobal, quadrante.estiloBotao);
+	const estiloBotaoDoQuadrante = estiloBotaoAtivo(quadrante.personalizaEstiloBotao, quadrante.estiloBotao);
+	const arranjo = resolverArranjo(dados.estiloBotaoGlobal, estiloBotaoDoQuadrante);
 	lista.addClass(`is-arranjo-${arranjo}`);
 	const colunas = colunasDoArranjo(arranjo);
 	if (colunas > 1) lista.style.setProperty("--dash-home-botao-colunas", String(colunas));
@@ -169,7 +173,7 @@ function renderizarQuadrante(
 	for (const botao of quadrante.botoes) {
 		renderizarBotao(lista, botao, opcoes, {
 			global: dados.estiloBotaoGlobal,
-			doQuadrante: quadrante.estiloBotao,
+			doQuadrante: estiloBotaoDoQuadrante,
 			corDoQuadrante,
 		});
 	}

@@ -41,6 +41,22 @@ export const ESTILO_PADRAO: Required<EstiloQuadrante> = {
 	tamanhoIcone: 16,
 };
 
+/**
+ * O estilo que o quadrante REALMENTE aplica, considerando a chave "personalizar ou herdar".
+ *
+ * Um quadrante que herda tem os ajustes dele preservados em `estilo` (para não perder trabalho ao
+ * alternar), mas eles ficam adormecidos: quem desenha precisa ver `undefined`, senão os valores
+ * guardados vazariam para o dashboard e "herdar do global" não herdaria nada.
+ *
+ * É o ponto único onde a flag é interpretada — render, nota e painel passam todos por aqui.
+ */
+export function estiloAtivo(
+	personaliza: boolean | undefined,
+	estilo: EstiloQuadrante | undefined,
+): EstiloQuadrante | undefined {
+	return personaliza ? estilo : undefined;
+}
+
 /** Aplica a herança: o que o estilo do quadrante não define, vem do global. */
 export function resolverEstilo(
 	global: EstiloQuadrante | undefined,

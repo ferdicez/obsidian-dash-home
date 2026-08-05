@@ -26,7 +26,7 @@ import {
 	type TipoAcao,
 	type TipoValorPropriedade,
 } from "./dados";
-import { resolverEstilo, type EstiloQuadrante, type PosicaoBarra } from "./estilo";
+import { estiloAtivo, resolverEstilo, type EstiloQuadrante, type PosicaoBarra } from "./estilo";
 import {
 	FAIXAS,
 	quemDefine,
@@ -422,9 +422,15 @@ export class PainelConfigDashCards extends PluginSettingTab {
 		const global = dados.estiloGlobal;
 
 		// Quantos quadrantes têm posição própria — eles ignoram esta configuração global, e sem
-		// aviso a usuária mexe aqui e "não acontece nada".
+		// aviso a usuária mexe aqui e "não acontece nada" (o bug da sessão 11).
+		//
+		// `estiloAtivo` é essencial aqui: um quadrante que voltou a herdar ainda GUARDA uma
+		// posição de barra, mas não a aplica. Contá-lo faria o aviso apontar quadrantes que na
+		// verdade obedecem ao global — o mesmo tipo de mentira que o aviso existe para evitar.
 		const comBarraPropria = this.plugin.dados.dashboards.flatMap((d) =>
-			d.quadrantes.filter((q) => q.estilo?.posicaoBarra !== undefined),
+			d.quadrantes.filter(
+				(q) => estiloAtivo(q.personalizaEstilo, q.estilo)?.posicaoBarra !== undefined,
+			),
 		);
 
 		const barraGlobal = new Setting(el)
@@ -452,6 +458,9 @@ export class PainelConfigDashCards extends PluginSettingTab {
 					.setIcon("rotate-ccw")
 					.setTooltip("Fazer todos herdarem daqui")
 					.onClick(async () => {
+						// Só a barra, e não a flag inteira: o quadrante pode ter personalizado
+						// arredondamento e espaçamento também, e desligar tudo aqui apagaria
+						// escolhas que este botão não promete tocar.
 						for (const quad of comBarraPropria) {
 							if (quad.estilo) delete quad.estilo.posicaoBarra;
 						}
@@ -723,6 +732,44 @@ export class PainelConfigDashCards extends PluginSettingTab {
 				});
 
 				secaoBotoes.sePreenchido((corpoBotoes) => {
+					// Mesma chave "herdar ou personalizar" da aparência do quadrante, pelo mesmo
+					// motivo — aqui são ainda MAIS controles herdados aparecendo sem fazer nada.
+					const personalizaBotao = quadrante.personalizaEstiloBotao === true;
+
+					new Setting(corpoBotoes)
+						.setName("Aparência dos botões")
+						.setDesc(
+							personalizaBotao
+								? "Os botões deste quadrante têm aparência própria; cada botão ainda pode ter a sua."
+								: "Os botões deste quadrante seguem a aparência global.",
+						)
+						.addDropdown((drop) => {
+							drop.addOption("herdar", "Herdar do global");
+							drop.addOption("personalizar", "Personalizar");
+							drop.setValue(personalizaBotao ? "personalizar" : "herdar");
+							drop.onChange(async (valor) => {
+								const querPersonalizar = valor === "personalizar";
+								quadrante.personalizaEstiloBotao = querPersonalizar ? true : undefined;
+
+								// Nasce igual ao que já herdava — nada muda de aparência no clique.
+								// `cor` e `tamanhoFonte` ficam de fora: o padrão de fábrica deles é
+								// `undefined` porque o valor real vem de outro lugar (a cor do
+								// quadrante; o dropdown de tamanho), e fixá-los aqui desligaria esses
+								// controles em silêncio — a armadilha nº 9 do doc.
+								if (querPersonalizar && !this.temEstiloProprio(quadrante.estiloBotao)) {
+									const { cor, tamanhoFonte, ...resto } = resolverEstiloBotao(
+										this.plugin.dados.estiloBotaoGlobal,
+										undefined,
+										undefined,
+									);
+									quadrante.estiloBotao = resto;
+								}
+								await this.aplicar();
+							});
+						});
+
+					if (!personalizaBotao) return;
+
 					corpoBotoes.createDiv({
 						cls: "dash-home-config-nota",
 						text: "Vale para os botões deste quadrante; cada botão ainda pode ter o seu.",
@@ -736,15 +783,28 @@ export class PainelConfigDashCards extends PluginSettingTab {
 						doBotao: undefined,
 					});
 
-					new Setting(corpoBotoes).addButton((b) =>
-						b
-							.setButtonText("Voltar ao estilo global")
-							.setTooltip("Descarta os ajustes de botão deste quadrante")
-							.onClick(async () => {
-								quadrante.estiloBotao = {};
-								await this.aplicar();
-							}),
-					);
+					new Setting(corpoBotoes)
+						.addButton((b) =>
+							b
+								.setButtonText("Voltar a herdar")
+								.setTooltip("Segue o global de novo; os ajustes ficam guardados")
+								.onClick(async () => {
+									quadrante.personalizaEstiloBotao = undefined;
+									await this.aplicar();
+								}),
+						)
+						.addButton((b) =>
+							b
+								.setButtonText("Limpar os ajustes")
+								.setTooltip("Descarta os ajustes de botão deste quadrante")
+								.setWarning()
+								.onClick(async () => {
+									quadrante.estiloBotao = {};
+									quadrante.personalizaEstiloBotao = undefined;
+									new Notice("Aparência dos botões limpa. Eles voltaram a seguir o global.");
+									await this.aplicar();
+								}),
+						);
 				});
 			}
 		});
@@ -1053,8 +1113,51 @@ export class PainelConfigDashCards extends PluginSettingTab {
 	/**
 	 * A aparência do quadrante. Cada controle mexe só no estilo DESTE quadrante; o que ele não
 	 * define herda do estilo global (seção "Aparência", mais abaixo no painel).
+	 *
+	 * ── Por que os controles ficam escondidos atrás de "Herdar / Personalizar" ───────────────
+	 *
+	 * Pedido dela, e a razão é boa: um quadrante que herda mostrava OITO controles dizendo
+	 * "Herdando do global", nenhum dos quais fazia nada até ser mexido. A informação certa era
+	 * "este quadrante segue o global" — uma linha, não oito.
+	 *
+	 * A escolha é uma CHAVE separada dos valores (`personalizaEstilo`), e não a ausência deles:
+	 * assim voltar para "herdar" preserva os ajustes, e personalizar de novo os devolve. Perder
+	 * uma configuração inteira por um clique foi o erro da sessão 13, em outra roupa.
 	 */
 	private desenharEstilo(el: HTMLElement, quadrante: Quadrante): void {
+		const personaliza = quadrante.personalizaEstilo === true;
+
+		new Setting(el)
+			.setName("Aparência do quadrante")
+			.setDesc(
+				personaliza
+					? "Este quadrante tem aparência própria e ignora a configuração global."
+					: "Este quadrante segue a aparência global (seção “Aparência”, no fim do painel).",
+			)
+			.addDropdown((drop) => {
+				drop.addOption("herdar", "Herdar do global");
+				drop.addOption("personalizar", "Personalizar");
+				drop.setValue(personaliza ? "personalizar" : "herdar");
+				drop.onChange(async (valor) => {
+					const querPersonalizar = valor === "personalizar";
+					// `undefined` e não `false` ao herdar: é o estado neutro do modelo, e mantém o
+					// data.json limpo de chaves que só dizem "o padrão".
+					quadrante.personalizaEstilo = querPersonalizar ? true : undefined;
+
+					// Ao personalizar pela primeira vez, os controles nascem com os valores que o
+					// quadrante JÁ herdava — escolha dela. Assim nada muda de aparência no clique:
+					// ela ajusta só o que quer diferente, em vez de reconstruir tudo do zero.
+					if (querPersonalizar && !this.temEstiloProprio(quadrante.estilo)) {
+						quadrante.estilo = { ...resolverEstilo(this.plugin.dados.estiloGlobal, {}) };
+					}
+					await this.aplicar();
+				});
+			});
+
+		// Herdando: nada mais a mostrar. Os ajustes dela (se houver) continuam guardados em
+		// `quadrante.estilo`, adormecidos — `estiloAtivo()` é quem os mantém fora do render.
+		if (!personaliza) return;
+
 		const estilo = (quadrante.estilo ??= {});
 		// O que vale quando este quadrante NÃO define nada — é o valor que os controles mostram
 		// como "herdando". Resolver com o estilo do quadrante junto mostraria o valor próprio,
@@ -1126,15 +1229,46 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			}),
 		);
 
-		new Setting(el).addButton((botao) =>
-			botao
-				.setButtonText("Voltar ao estilo global")
-				.setTooltip("Descarta os ajustes deste quadrante")
-				.onClick(async () => {
-					quadrante.estilo = {};
-					await this.aplicar();
-				}),
-		);
+		// Dois caminhos de volta, de propósito, porque são coisas diferentes:
+		//
+		// - "Voltar a herdar" é reversível: os ajustes ficam guardados e voltam se ela personalizar
+		//   de novo. É o mesmo que o dropdown lá em cima, repetido aqui porque depois de oito
+		//   controles o topo da seção já saiu da tela.
+		// - "Limpar os ajustes" é o descarte de verdade, para quem quer recomeçar do global.
+		new Setting(el)
+			.addButton((botao) =>
+				botao
+					.setButtonText("Voltar a herdar")
+					.setTooltip("Segue o global de novo; os ajustes ficam guardados")
+					.onClick(async () => {
+						quadrante.personalizaEstilo = undefined;
+						await this.aplicar();
+					}),
+			)
+			.addButton((botao) =>
+				botao
+					.setButtonText("Limpar os ajustes")
+					.setTooltip("Descarta a aparência própria deste quadrante e volta ao global")
+					.setWarning()
+					.onClick(async () => {
+						quadrante.estilo = {};
+						quadrante.personalizaEstilo = undefined;
+						new Notice("Aparência do quadrante limpa. Ele voltou a seguir o global.");
+						await this.aplicar();
+					}),
+			);
+	}
+
+	/**
+	 * Se um estilo tem algum campo definido de fato.
+	 *
+	 * `{}` não conta: o painel cria o objeto vazio só de desenhar a seção, e tratá-lo como
+	 * "personalizado" faria o primeiro clique em Personalizar não pré-preencher nada.
+	 * `!== undefined` e não truthiness, pelo motivo de sempre (`radius: 0` é escolha válida).
+	 */
+	private temEstiloProprio(estilo: object | undefined): boolean {
+		if (!estilo) return false;
+		return Object.values(estilo).some((v) => v !== undefined);
 	}
 
 	/**
