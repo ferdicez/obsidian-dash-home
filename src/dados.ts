@@ -17,8 +17,17 @@ import { normalizarEstiloBotao, type EstiloBotao } from "./estilo-botao";
  * as notas geradas continuam lá e continuam legíveis (o bloco vira texto YAML visível).
  */
 
-/** O que um botão faz ao ser clicado. */
-export type TipoAcao = "nota" | "pasta" | "busca" | "comando" | "propriedade";
+/**
+ * O que um botão faz ao ser clicado.
+ *
+ * "campo" é o único que NÃO é um clique: em vez de um botão, ele desenha uma caixa de digitação
+ * dentro do card, ligada a uma propriedade da nota. É o que substitui o input do Meta Bind —
+ * pedido dela: "não vai ser um botão para eu clicar, vai ser um campo de input".
+ */
+export type TipoAcao = "nota" | "pasta" | "busca" | "comando" | "propriedade" | "campo";
+
+/** O tipo de caixa de digitação de um botão "campo". */
+export type TipoCampo = "numero" | "texto" | "data";
 
 /**
  * O que fazer com uma propriedade (campo do frontmatter) da nota aberta:
@@ -90,10 +99,26 @@ export interface Botao {
 	 */
 	propriedades?: MudancaPropriedade[];
 	/**
+	 * A propriedade que a caixa de digitação preenche, quando `tipo === "campo"`.
+	 *
+	 * Separada de `propriedades` de propósito: lá são mudanças de valor FIXO, decididas na
+	 * montagem; aqui o valor é digitado na hora, e o que se configura é só o alvo e o formato.
+	 */
+	campo?: CampoEntrada;
+	/**
 	 * Aparência só deste botão; o que não define, herda do quadrante e depois do global.
 	 * É a terceira camada da herança — ver `estilo-botao.ts`.
 	 */
 	estilo?: EstiloBotao;
+}
+
+/** Uma caixa de digitação ligada a uma propriedade da nota aberta. */
+export interface CampoEntrada {
+	/** O nome da propriedade no frontmatter ("lembrete"). */
+	nome: string;
+	tipo: TipoCampo;
+	/** Texto de dica dentro da caixa vazia ("Number", "dias antes"…). */
+	placeholder?: string;
 }
 
 export interface Quadrante {
@@ -464,6 +489,7 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 				if (!TIPOS_VALIDOS.has(botao.tipo)) botao.tipo = "nota";
 				botao.estilo = normalizarEstiloBotao(botao.estilo);
 				botao.propriedades = normalizarPropriedades(botao.propriedades);
+				botao.campo = normalizarCampo(botao.campo);
 			}
 		}
 	}
@@ -471,10 +497,40 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 	return dados;
 }
 
-const TIPOS_VALIDOS = new Set<string>(["nota", "pasta", "busca", "comando", "propriedade"]);
+const TIPOS_VALIDOS = new Set<string>(["nota", "pasta", "busca", "comando", "propriedade", "campo"]);
 
 const OPERACOES_VALIDAS = new Set<string>(["definir", "alternar", "escolher"]);
 const TIPOS_VALOR_VALIDOS = new Set<string>(["texto", "numero", "booleano", "data", "vazio"]);
+const TIPOS_CAMPO_VALIDOS = new Set<string>(["numero", "texto", "data"]);
+
+/**
+ * Blindagem do campo de digitação vindo do data.json.
+ *
+ * Mesma regra das propriedades: SEM NOME é descartado, e não corrigido — o nome é a chave que
+ * será escrita no frontmatter dela, e inventar um gravaria um campo que ela nunca pediu. Já um
+ * tipo inválido cai em "texto", que aceita qualquer conteúdo e por isso não perde o que ela
+ * digitar.
+ */
+export function normalizarCampo(valor: unknown): CampoEntrada | undefined {
+	if (!valor || typeof valor !== "object") return undefined;
+	const bruto = valor as Partial<CampoEntrada>;
+
+	const nome = typeof bruto.nome === "string" ? bruto.nome.trim() : "";
+	if (!nome) return undefined;
+
+	const tipo: TipoCampo =
+		typeof bruto.tipo === "string" && TIPOS_CAMPO_VALIDOS.has(bruto.tipo)
+			? (bruto.tipo as TipoCampo)
+			: "texto";
+
+	const campo: CampoEntrada = { nome, tipo };
+	// Só grava se houver texto de fato: um placeholder vazio no data.json é ruído, e a chave
+	// ausente já significa "sem dica".
+	if (typeof bruto.placeholder === "string" && bruto.placeholder.trim()) {
+		campo.placeholder = bruto.placeholder;
+	}
+	return campo;
+}
 
 /**
  * Blindagem da lista de propriedades vinda do data.json.
@@ -609,6 +665,7 @@ function clonarDashboard(d: Dashboard): Dashboard {
 			botoes: q.botoes.map((b) => ({
 				...b,
 				estilo: b.estilo ? { ...b.estilo } : undefined,
+				campo: b.campo ? { ...b.campo } : undefined,
 				propriedades: b.propriedades?.map((p) => ({ ...p })),
 			})),
 		})),
@@ -724,6 +781,7 @@ export function duplicarQuadrante(dashboard: Dashboard, indice: number): Quadran
 			// Sem "(cópia)" no nome dos botões: eles vão para um quadrante novo, onde não há
 			// nenhum homônimo ao lado — e é o rótulo que aparece no dashboard renderizado.
 			estilo: b.estilo ? { ...b.estilo } : undefined,
+			campo: b.campo ? { ...b.campo } : undefined,
 			// `opcoes` é array: sem a cópia, editar a lista de uma mudaria a da outra.
 			propriedades: b.propriedades?.map((p) => ({ ...p, id: novoId("p"), opcoes: p.opcoes ? [...p.opcoes] : undefined })),
 		})),
@@ -758,6 +816,7 @@ export function duplicarBotao(quadrante: Quadrante, indice: number): Botao | und
 		// do painel — e ela ainda vai renomear este de qualquer forma.
 		texto: `${original.texto} (cópia)`,
 		estilo: original.estilo ? { ...original.estilo } : undefined,
+		campo: original.campo ? { ...original.campo } : undefined,
 		propriedades: original.propriedades?.map((p) => ({
 			...p,
 			id: novoId("p"),

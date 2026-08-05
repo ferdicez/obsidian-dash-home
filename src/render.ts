@@ -10,7 +10,7 @@ import {
 	variaveisDoBotao,
 	type EstiloBotao,
 } from "./estilo-botao";
-import { executarAcao } from "./acoes";
+import { executarAcao, gravarCampo } from "./acoes";
 
 /**
  * Desenha o grid de quadrantes. Usado em dois lugares com a mesma função — o dashboard renderizado
@@ -269,6 +269,13 @@ function renderizarBotao(
 	opcoes: OpcoesRender,
 	ctx: ContextoBotao,
 ): void {
+	// O "campo" não é um botão: em vez de agir no clique, ele É o controle. Sai por um caminho
+	// próprio antes de qualquer coisa de <a>, hover ou ação.
+	if (botao.tipo === "campo") {
+		renderizarCampo(lista, botao, opcoes, ctx);
+		return;
+	}
+
 	// <a> em vez de <button> para o Ctrl+clique / clique do meio abrirem em nova aba de graça —
 	// é o comportamento que a usuária espera de qualquer link do Obsidian.
 	const el = lista.createEl("a", { cls: "dash-home-botao", href: "#" });
@@ -326,5 +333,85 @@ function renderizarBotao(
 		if (evento.button !== 1) return;
 		evento.preventDefault();
 		void executarAcao(app, botao, true);
+	});
+}
+
+/**
+ * A caixa de digitação ligada a uma propriedade da nota aberta — o que substitui o input do
+ * Meta Bind.
+ *
+ * ── Quando grava ─────────────────────────────────────────────────────────────────────────
+ *
+ * No `change` (sair do campo ou apertar Enter), e não a cada tecla. Escolha dela, e a certa:
+ * digitar "120" gravaria 1, 12 e 120 na nota — três escritas, e duas com um valor que ela nunca
+ * quis. Um Enter também tira o foco, para o retorno visual ser o mesmo dos dois caminhos.
+ *
+ * ── Por que o valor não é relido depois de gravar ────────────────────────────────────────
+ *
+ * O que ela digitou já está na caixa; reler do frontmatter para reescrever a mesma coisa só
+ * criaria a chance de a caixa pular sozinha enquanto ela ainda está nela.
+ */
+function renderizarCampo(
+	lista: HTMLElement,
+	botao: Botao,
+	opcoes: OpcoesRender,
+	ctx: ContextoBotao,
+): void {
+	const cfg = botao.campo;
+
+	const caixa = lista.createDiv({ cls: "dash-home-campo" });
+
+	const estilo = resolverEstiloBotao(ctx.global, ctx.doQuadrante, botao.estilo);
+	const cor = estilo.cor ? corCss(estilo.cor) : ctx.corDoQuadrante;
+	for (const [prop, valor] of variaveisDoBotao(estilo, cor)) {
+		caixa.style.setProperty(prop, valor);
+	}
+
+	// O rótulo fica ACIMA da caixa, como no Meta Bind do print dela: o nome da propriedade é o
+	// título do card, e a caixa é o controle logo abaixo.
+	if (botao.texto) {
+		const rotulo = caixa.createDiv({ cls: "dash-home-campo-rotulo" });
+		if (botao.icone) setIcon(rotulo.createSpan({ cls: "dash-home-campo-icone" }), botao.icone);
+		rotulo.createSpan({ text: botao.texto });
+	}
+
+	// Sem propriedade configurada não há o que preencher — e uma caixa que não grava em lugar
+	// nenhum é pior que um aviso, porque parece funcionar.
+	if (!cfg?.nome) {
+		caixa.createDiv({ cls: "dash-home-botao-vazio", text: "campo sem propriedade" });
+		return;
+	}
+
+	const input = caixa.createEl("input", { cls: "dash-home-campo-input" });
+	input.type = cfg.tipo === "numero" ? "number" : cfg.tipo === "data" ? "date" : "text";
+	if (cfg.placeholder) input.placeholder = cfg.placeholder;
+
+	if (opcoes.miniatura) {
+		// Na miniatura o campo é uma imagem do que vai existir: não lê nem escreve nota nenhuma.
+		input.disabled = true;
+		return;
+	}
+
+	const app = opcoes.app;
+	if (!app) return;
+
+	// O valor que já está na nota, para a caixa abrir preenchida — sem isso ela não serviria para
+	// CONFERIR o valor atual, só para trocá-lo às cegas.
+	const arquivo = app.workspace.getActiveFile();
+	if (arquivo) {
+		const atual = app.metadataCache.getFileCache(arquivo)?.frontmatter?.[cfg.nome];
+		if (atual !== undefined && atual !== null) input.value = String(atual);
+	}
+
+	input.addEventListener("change", () => {
+		void gravarCampo(app, botao, input.value);
+	});
+
+	// Enter grava e sai do campo. O `blur` dispara o `change` acima quando há mudança pendente,
+	// então o Enter não grava duas vezes — e sair do campo dá a ela o retorno de que terminou.
+	input.addEventListener("keydown", (evento) => {
+		if (evento.key !== "Enter") return;
+		evento.preventDefault();
+		input.blur();
 	});
 }

@@ -885,3 +885,66 @@
 	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
 }
+
+/* ── Campo de digitação ─────────────────────────────────────────────────────────────────────
+ *
+ * O botão do tipo "campo" não é um botão: é uma caixa onde ela digita, ligada a uma propriedade
+ * da nota aberta. Substitui o input do Meta Bind, e por isso imita a forma dele: um rótulo
+ * discreto em cima, a caixa logo abaixo ocupando a largura toda.
+ *
+ * Não herda `.dash-home-botao` de propósito — hover que muda de cor, cursor de mão e padding de
+ * botão são retorno visual de "clique aqui", e aqui o clique não faz nada: ela vai DIGITAR. */
+.dash-home-campo {
+	display: flex;
+	flex-direction: column;
+	gap: 0.35em;
+	min-width: 0;
+}
+
+.dash-home-campo-rotulo {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.dash-home-campo-icone {
+	display: inline-flex;
+	align-items: center;
+	color: var(--dash-home-botao-cor, var(--dash-home-cor));
+}
+
+.dash-home-campo-icone svg {
+	width: var(--dash-home-botao-icone, 16px);
+	height: var(--dash-home-botao-icone, 16px);
+}
+
+/* `width: 100%` + `min-width: 0` para a caixa caber na coluna do grid: o input tem largura
+ * intrínseca própria (o `size` padrão do HTML), que sem isto estoura o card num arranjo de 2 ou 3
+ * por linha. */
+.dash-home-campo-input {
+	width: 100%;
+	min-width: 0;
+	padding: var(--dash-home-botao-altura, 8px) 0.7em;
+	border-radius: var(--dash-home-botao-radius, var(--radius-s));
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-size: var(--dash-home-botao-fonte);
+}
+
+/* O foco usa a cor do quadrante/botão, e não o accent do tema: é o mesmo princípio do hover
+ * (sessão 18) — o retorno visual tem que concordar com a cor que ela escolheu. */
+.dash-home-campo-input:focus {
+	outline: none;
+	border-color: var(--dash-home-botao-cor, var(--dash-home-cor));
+	box-shadow: 0 0 0 2px color-mix(in srgb, var(--dash-home-botao-cor, var(--dash-home-cor)) 25%, transparent);
+}
+
+/* Na miniatura do painel o campo é uma imagem do que vai existir: desabilitado, mas sem o cinza
+ * de "quebrado" que o navegador aplica por padrão. */
+.dash-home-campo-input:disabled {
+	opacity: 1;
+	cursor: default;
+}

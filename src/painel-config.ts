@@ -24,6 +24,7 @@ import {
 	type OperacaoPropriedade,
 	type Quadrante,
 	type TipoAcao,
+	type TipoCampo,
 	type TipoValorPropriedade,
 } from "./dados";
 import { estiloAtivo, resolverEstilo, type EstiloQuadrante, type PosicaoBarra } from "./estilo";
@@ -1670,6 +1671,10 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			this.desenharPropriedades(linha, botao);
 		}
 
+		if (botao.tipo === "campo") {
+			this.desenharCampo(linha, botao);
+		}
+
 		// Terceira linha: a aparência SÓ deste botão — a camada de cima da herança. É o que
 		// permite um botão verde e um vermelho no mesmo quadrante.
 		const secaoEstilo = criarAcordeao(linha, {
@@ -1710,6 +1715,7 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			drop.addOption("busca", "Buscar");
 			drop.addOption("comando", "Rodar comando");
 			drop.addOption("propriedade", "Alterar propriedades");
+			drop.addOption("campo", "Campo para digitar");
 			drop.setValue(botao.tipo);
 			drop.onChange(async (valor) => {
 				// O destino antigo não faz sentido no tipo novo (um caminho de nota não é uma query
@@ -1727,6 +1733,13 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			// O alvo é sempre a nota aberta, então não há destino a escolher — só a lista de
 			// mudanças, que vai logo abaixo em `desenharPropriedades`.
 			destino.setDesc("Altera a nota que estiver aberta no momento do clique.");
+			return;
+		}
+
+		if (botao.tipo === "campo") {
+			// Também sem destino: o alvo é a nota aberta e a propriedade fica em `campo`, logo
+			// abaixo. Aqui só a explicação de que este não é um botão de clicar.
+			destino.setDesc("Vira uma caixa de digitação no dashboard, ligada a uma propriedade da nota aberta.");
 			return;
 		}
 
@@ -1773,6 +1786,76 @@ export class PainelConfigDashCards extends PluginSettingTab {
 				await salvar(id);
 			}).open();
 		}
+	}
+
+	/**
+	 * A caixa de digitação: qual propriedade ela preenche e de que formato.
+	 *
+	 * É UMA propriedade só, ao contrário do tipo "propriedade" (que é lista): aqui o valor vem da
+	 * digitação dela na hora, e uma caixa que preenchesse dois campos com o mesmo texto não teria
+	 * uso real. Para vários campos, vários botões — que é o que o print do Meta Bind dela mostra.
+	 */
+	private desenharCampo(el: HTMLElement, botao: Botao): void {
+		// `??=` cria o objeto ao abrir a seção; a normalização da carga descarta o que ficar sem
+		// nome, então um campo espiado e abandonado não vira lixo no data.json.
+		const campo = (botao.campo ??= { nome: "", tipo: "texto" });
+
+		const alvo = new Setting(el)
+			.setName("Propriedade")
+			.setDesc(
+				campo.nome
+					? `A caixa preenche "${campo.nome}" na nota aberta.`
+					: "Escolha qual propriedade da nota esta caixa preenche.",
+			);
+
+		alvo.addButton((b) => {
+			b.setButtonText(campo.nome || "Escolher propriedade…");
+			b.setTooltip(campo.nome || "Escolher a propriedade da nota");
+			b.onClick(() => {
+				new ModalEscolherPropriedade(this.app, async (nome) => {
+					campo.nome = nome;
+					// Adota o nome da propriedade como rótulo do botão, se ela ainda não deu um: é o
+					// que o print dela mostra (o título do card é o nome da propriedade), e poupa
+					// digitar a mesma palavra duas vezes.
+					if (!botao.texto || botao.texto === "Novo botão") botao.texto = nome;
+					await this.aplicar();
+				}).open();
+			});
+		});
+
+		alvo.addDropdown((drop) => {
+			drop.addOption("texto", "Texto");
+			drop.addOption("numero", "Número");
+			drop.addOption("data", "Data");
+			drop.setValue(campo.tipo);
+			drop.onChange(async (valor) => {
+				campo.tipo = valor as TipoCampo;
+				await this.aplicar();
+			});
+		});
+
+		new Setting(el)
+			.setName("Dica dentro da caixa")
+			.setDesc("Opcional. O texto cinza que aparece enquanto a caixa está vazia.")
+			.addText((texto) =>
+				texto
+					.setPlaceholder("Ex.: dias antes")
+					.setValue(campo.placeholder ?? "")
+					.onChange((valor) => {
+						campo.placeholder = valor;
+						this.salvarDigitacao();
+					}),
+			);
+
+		el.createDiv({
+			cls: "dash-home-config-vazio",
+			text:
+				campo.tipo === "numero"
+					? "Grava como número — uma Base que filtra por número acha a nota."
+					: campo.tipo === "data"
+						? "Grava como data (AAAA-MM-DD)."
+						: "Grava como texto. Apagar a caixa remove a propriedade da nota.",
+		});
 	}
 
 	/**

@@ -38,6 +38,52 @@ export async function executarAcao(app: App, botao: Botao, novaAba: boolean): Pr
 }
 
 /**
+ * Grava na nota aberta o que ela digitou num botão do tipo "campo".
+ *
+ * Passa por `aplicarPropriedades` como qualquer outra alteração, e não por uma escrita direta,
+ * porque é lá que mora a conversão de tipo do YAML: sem ela um "3" digitado viraria a STRING "3",
+ * e a Base dela que filtra por número deixaria de achar a nota (a armadilha nº 13 do doc).
+ *
+ * Campo apagado remove a propriedade em vez de gravar string vazia — um `lembrete:` pendurado
+ * aparece na lista de propriedades do Obsidian e nas Bases como se fosse um valor.
+ */
+export async function gravarCampo(app: App, botao: Botao, texto: string): Promise<void> {
+	const cfg = botao.campo;
+	if (!cfg?.nome?.trim()) return;
+
+	const arquivo = app.workspace.getActiveFile();
+	if (!(arquivo instanceof TFile) || arquivo.extension !== "md") {
+		new Notice("Abra uma nota para preencher esta propriedade.");
+		return;
+	}
+
+	const valor = texto.trim();
+
+	// O tipo do campo vira o tipo do VALOR, com uma exceção: vazio apaga a chave, seja qual for o
+	// tipo da caixa.
+	const mudanca: MudancaPropriedade = {
+		id: `campo-${cfg.nome}`,
+		nome: cfg.nome.trim(),
+		operacao: "definir",
+		tipo: valor === "" ? "vazio" : cfg.tipo === "numero" ? "numero" : cfg.tipo === "data" ? "data" : "texto",
+		valor,
+	};
+
+	let resumo: string[] = [];
+	try {
+		await app.fileManager.processFrontMatter(arquivo, (frontmatter) => {
+			resumo = aplicarPropriedades(frontmatter, [mudanca]);
+		});
+	} catch (e) {
+		console.warn("[dash-home] falha ao gravar o campo na nota:", e);
+		new Notice(`Não consegui gravar "${cfg.nome}" em "${arquivo.basename}".`);
+		return;
+	}
+
+	if (resumo.length > 0) new Notice(`${arquivo.basename} — ${resumo.join(", ")}`);
+}
+
+/**
  * Altera as propriedades (frontmatter) da NOTA ABERTA.
  *
  * O alvo é a nota ativa, e não uma nota fixa, porque é isso que torna o botão reutilizável: o mesmo

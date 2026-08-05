@@ -153,6 +153,19 @@ export function gerarBloco(
 				}
 			}
 
+			// A caixa de digitação, quando é um botão do tipo "campo". Vai ao bloco pela mesma razão
+			// das propriedades: sem isto, o bloco descreveria "tipo: campo" sem dizer QUAL
+			// propriedade ele preenche — e a armadilha nº 8 do doc já mordeu três vezes.
+			if (botao.campo?.nome) {
+				linhas.push(`        campo:`);
+				linhas.push(`          nome: ${aspas(botao.campo.nome)}`);
+				linhas.push(`          tipo: ${botao.campo.tipo}`);
+				// Só quando existe: um `placeholder: ""` sugeriria uma dica que não há.
+				if (botao.campo.placeholder) {
+					linhas.push(`          dica: ${aspas(botao.campo.placeholder)}`);
+				}
+			}
+
 			// A camada de cima da herança: só o que ESTE botão define, não o que ele herda.
 			const entradasDoBotao = entradasDefinidas(botao.estilo);
 			if (entradasDoBotao.length > 0) {
