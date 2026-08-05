@@ -88,6 +88,19 @@ import {
  */
 type Configuravel = Pick<Botao, "texto" | "tipo" | "destino" | "propriedades" | "criar">;
 
+/**
+ * As duas telas do painel.
+ *
+ * "dashboards" é a montagem: quadrantes, grade, notas e a aparência do CARD. "botoes" é a
+ * biblioteca: os botões pré-configurados e a aparência de botão (global e a de cada botão salvo).
+ *
+ * A divisão é por assunto, não por conveniência de código: montar o layout e configurar um botão
+ * reutilizável são trabalhos que acontecem em momentos diferentes, e num painel só cada um esconde
+ * o outro. A camada do MEIO (aparência dos botões de um quadrante específico) fica na tela de
+ * dashboards de propósito — é uma sobreposição daquele card, e só faz sentido ao lado dele.
+ */
+type Tela = "dashboards" | "botoes";
+
 export class PainelConfigDashCards extends PluginSettingTab {
 	// O estado de aberto/fechado dos acordeões vive no módulo `acordeao.ts`, não aqui — ver o
 	// comentário de `abertos` lá.
@@ -102,6 +115,13 @@ export class PainelConfigDashCards extends PluginSettingTab {
 	/** Paletas do plugin Customize. Lidas do disco uma vez por abertura do painel. */
 	private paletas: PaletaExterna[] = [];
 	private leuPaletas = false;
+
+	/**
+	 * A tela aberta. Fica na INSTÂNCIA (e não no data.json) de propósito: é estado de navegação, não
+	 * configuração dela — gravar no disco faria o painel reabrir dias depois na tela em que ela por
+	 * acaso parou, em vez de na montagem, que é o começo natural.
+	 */
+	private tela: Tela = "dashboards";
 
 	display(): void {
 		this.atualizar();
@@ -170,14 +190,17 @@ export class PainelConfigDashCards extends PluginSettingTab {
 		void this.plugin.salvar();
 	}
 
-	private atualizar(): void {
+	private atualizar(trocouDeTela = false): void {
 		const { containerEl } = this;
 
 		// Guarda e devolve o scroll. Sem isto, cada clique (trocar cor, reordenar, abrir um
 		// quadrante) joga o painel de volta para o topo e a usuária tem que se reencontrar na
 		// lista — o redesenho total é conveniente para o código, mas quem paga o preço é ela.
+		//
+		// Na TROCA DE TELA, não: as duas têm alturas e conteúdos diferentes, e devolver a posição de
+		// uma na outra a deixaria no meio de uma lista que ela nunca rolou. Tela nova começa no topo.
 		const rolagem = this.acharRolagem();
-		const posicao = rolagem?.scrollTop ?? 0;
+		const posicao = trocouDeTela ? 0 : (rolagem?.scrollTop ?? 0);
 
 		containerEl.empty();
 		containerEl.addClass("dash-home-config");
@@ -185,22 +208,116 @@ export class PainelConfigDashCards extends PluginSettingTab {
 		const dados = this.plugin.dados;
 		const dashboard = dashboardAtivo(dados);
 
-		this.desenharBarraDashboards(containerEl, dashboard);
+		this.desenharAbas(containerEl);
 
-		const colunas = containerEl.createDiv({ cls: "dash-home-config-colunas" });
-		const esquerda = colunas.createDiv({ cls: "dash-home-config-montagem" });
-		const direita = colunas.createDiv({ cls: "dash-home-config-preview" });
+		if (this.tela === "botoes") {
+			// Sem a coluna da miniatura: ela mostra o dashboard montado, e um botão salvo não está
+			// nele — não reagiria ao que ela edita aqui. A largura inteira vai para os controles.
+			this.desenharTelaBotoes(containerEl, dados);
+		} else {
+			this.desenharBarraDashboards(containerEl, dashboard);
 
-		this.desenharMontagem(esquerda, dashboard);
-		this.desenharPreview(direita, dashboard);
+			const colunas = containerEl.createDiv({ cls: "dash-home-config-colunas" });
+			const esquerda = colunas.createDiv({ cls: "dash-home-config-montagem" });
+			const direita = colunas.createDiv({ cls: "dash-home-config-preview" });
 
-		if (rolagem && posicao > 0) {
+			this.desenharMontagem(esquerda, dashboard);
+			this.desenharPreview(direita, dashboard);
+		}
+
+		if (rolagem && (posicao > 0 || trocouDeTela)) {
 			// Depois do layout: o conteúdo acabou de ser recriado e a altura só é conhecida agora.
 			// Sem o requestAnimationFrame o scrollTop é cortado para a altura antiga (menor).
 			window.requestAnimationFrame(() => {
 				rolagem.scrollTop = posicao;
 			});
 		}
+	}
+
+	/**
+	 * As duas telas do painel, como abas no topo.
+	 *
+	 * `<button>` de verdade (e não uma div com onclick): dá foco por teclado, Enter/Espaço e leitura
+	 * de tela sem uma linha de JS — o mesmo princípio do cabeçalho do acordeão e da chavinha da s23.
+	 */
+	private desenharAbas(el: HTMLElement): void {
+		const barra = el.createDiv({ cls: "dash-home-config-abas", attr: { role: "tablist" } });
+
+		const aba = (tela: Tela, titulo: string, icone: string, descricao: string) => {
+			const ativa = this.tela === tela;
+			const botao = barra.createEl("button", {
+				cls: "dash-home-config-aba",
+				attr: { role: "tab", "aria-selected": String(ativa), title: descricao },
+			});
+			botao.toggleClass("is-ativa", ativa);
+			setIcon(botao.createSpan({ cls: "dash-home-config-aba-icone" }), icone);
+			botao.createSpan({ text: titulo });
+
+			botao.addEventListener("click", () => {
+				if (this.tela === tela) return;
+				// Uma digitação pendente é gravada ANTES de trocar: o redesenho descarta os campos, e
+				// o texto que ela acabou de digitar sumiria com eles.
+				this.descarregarDigitacao();
+				this.tela = tela;
+				this.atualizar(true);
+			});
+		};
+
+		aba("dashboards", "Dashboards", "layout-grid", "Montar os dashboards: quadrantes, grade e aparência dos cards");
+		aba("botoes", "Botões", "mouse-pointer-click", "Os botões pré-configurados e a aparência dos botões");
+	}
+
+	/**
+	 * A tela de botões: a biblioteca e a aparência de botão.
+	 *
+	 * A aparência GLOBAL mora aqui (e não na tela de dashboards) porque é aparência de botão — foi o
+	 * pedido dela. Continua sendo global de verdade: vale para todo botão de todo dashboard, e não
+	 * só para os salvos.
+	 */
+	private desenharTelaBotoes(el: HTMLElement, dados: DadosDashHome): void {
+		this.desenharBiblioteca(el, dados);
+
+		const secaoAparencia = criarAcordeao(el, {
+			chave: "secao:aparencia-botoes-global",
+			titulo: "Aparência dos botões",
+			descricao:
+				"A base de todo botão do vault. Um botão salvo pode ter a sua, e um quadrante pode " +
+				"sobrepor a dos botões dele.",
+		});
+
+		secaoAparencia.sePreenchido((corpo) => {
+			this.desenharEstiloBotao(corpo, {
+				alvo: (dados.estiloBotaoGlobal ??= {}),
+				camada: "global",
+				global: dados.estiloBotaoGlobal,
+				doQuadrante: undefined,
+				doBotao: undefined,
+			});
+		});
+
+		// O tamanho dos botões é do dashboard inteiro (uma classe no contêiner, não uma variável de
+		// botão), mas é tamanho de BOTÃO — pela regra dela, o controle vem para cá.
+		const secaoTamanho = criarAcordeao(el, {
+			chave: "secao:tamanho-botoes",
+			titulo: "Tamanho dos botões",
+			descricao: "Vale para o dashboard inteiro.",
+		});
+
+		secaoTamanho.sePreenchido((corpo) => {
+			new Setting(corpo)
+				.setName("Tamanho")
+				.setDesc("Cada botão ainda pode ter o seu tamanho de letra.")
+				.addDropdown((drop) => {
+					drop.addOption("pequeno", "Pequeno");
+					drop.addOption("medio", "Médio");
+					drop.addOption("grande", "Grande");
+					drop.setValue(dados.tamanhoBotao);
+					drop.onChange(async (valor) => {
+						dados.tamanhoBotao = valor as typeof dados.tamanhoBotao;
+						await this.aplicar();
+					});
+				});
+		});
 	}
 
 	/**
@@ -421,11 +538,10 @@ export class PainelConfigDashCards extends PluginSettingTab {
 
 		const dados = this.plugin.dados;
 
-		this.desenharBiblioteca(el, dados);
-
+		// A biblioteca e a aparência de BOTÃO vivem na outra tela — aqui é a montagem do dashboard.
 		const secaoAparencia = criarAcordeao(el, {
 			chave: "secao:aparencia",
-			titulo: "Aparência",
+			titulo: "Aparência dos cards",
 			descricao: "Vale para todos os quadrantes; cada um pode sobrescrever.",
 		});
 
@@ -565,6 +681,7 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			const secaoEstilo = criarAcordeao(corpo, {
 				chave: `${salvo.id}:salvo-estilo`,
 				titulo: "Aparência deste botão",
+				descricao: "O que não for definido aqui segue o global — e um quadrante ainda pode sobrepor.",
 				aninhado: true,
 			});
 
@@ -584,8 +701,8 @@ export class PainelConfigDashCards extends PluginSettingTab {
 
 				new Setting(dentro).addButton((b) =>
 					b
-						.setButtonText("Voltar ao estilo do quadrante")
-						.setTooltip("Descarta os ajustes deste botão salvo")
+						.setButtonText("Voltar ao padrão")
+						.setTooltip("Descarta os ajustes deste botão salvo — ele volta a seguir o global e o quadrante")
 						.onClick(async () => {
 							salvo.estilo = {};
 							await this.aplicar();
@@ -603,11 +720,11 @@ export class PainelConfigDashCards extends PluginSettingTab {
 	}
 
 	/**
-	 * A aparência global — o que vale para todos os quadrantes, salvo o que cada um sobrescrever.
+	 * A aparência dos CARDS — o que vale para todos os quadrantes, salvo o que cada um sobrescrever.
 	 *
-	 * Dividida em três acordeões aninhados porque eram ~14 controles corridos misturando três
-	 * assuntos: o que aparece no card, a moldura dele, e os botões. Uma parede de controles obriga
-	 * a ler todos para achar um; três títulos deixam a busca ser visual.
+	 * A parte de BOTÃO saiu daqui (foi para a tela "Botões", a pedido dela): esta seção agora trata
+	 * só do card em si. Continua em dois acordeões, pelo motivo de sempre — uma parede de controles
+	 * obriga a ler todos para achar um.
 	 */
 	private desenharAparencia(el: HTMLElement, dados: DadosDashHome): void {
 		const secaoCard = criarAcordeao(el, {
@@ -625,41 +742,10 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			aninhado: true,
 		});
 		secaoMoldura.sePreenchido((corpo) => this.desenharAparenciaMoldura(corpo, dados));
-
-		const secaoBotoes = criarAcordeao(el, {
-			chave: "aparencia:botoes",
-			titulo: "Botões",
-			descricao: "A base da herança: vale para todo botão que não tiver ajuste próprio.",
-			aninhado: true,
-		});
-
-		secaoBotoes.sePreenchido((corpo) => {
-			this.desenharEstiloBotao(corpo, {
-				alvo: (dados.estiloBotaoGlobal ??= {}),
-				camada: "global",
-				global: dados.estiloBotaoGlobal,
-				doQuadrante: undefined,
-				doBotao: undefined,
-			});
-		});
 	}
 
-	/** Tamanho dos botões e títulos: o que o card MOSTRA, antes de como ele é desenhado. */
+	/** O que o card MOSTRA, antes de como ele é desenhado. */
 	private desenharAparenciaCard(el: HTMLElement, dados: DadosDashHome): void {
-		new Setting(el)
-			.setName("Tamanho dos botões")
-			.setDesc("Vale para o dashboard inteiro. Cada botão ainda pode ter o seu tamanho de letra.")
-			.addDropdown((drop) => {
-				drop.addOption("pequeno", "Pequeno");
-				drop.addOption("medio", "Médio");
-				drop.addOption("grande", "Grande");
-				drop.setValue(dados.tamanhoBotao);
-				drop.onChange(async (valor) => {
-					dados.tamanhoBotao = valor as typeof dados.tamanhoBotao;
-					await this.aplicar();
-				});
-			});
-
 		new Setting(el)
 			.setName("Mostrar títulos dos quadrantes")
 			.setDesc("Desligue para cards só com os botões, sem o nome em cima.")
@@ -992,8 +1078,9 @@ export class PainelConfigDashCards extends PluginSettingTab {
 							.setButtonText("Duplicar o último")
 							.setTooltip(`Copia "${ultimo.texto}" com todos os ajustes`)
 							.onClick(async () => {
-								const copia = duplicarBotao(quadrante, quadrante.botoes.length - 1);
-								if (copia) abrirAcordeao(`${copia.id}:estilo`);
+								// Sem abrir acordeão: o botão do quadrante não tem mais seção de
+								// aparência para expandir (ela vive na tela "Botões").
+								duplicarBotao(quadrante, quadrante.botoes.length - 1);
 								await this.aplicar();
 							}),
 					);
@@ -1966,10 +2053,9 @@ export class PainelConfigDashCards extends PluginSettingTab {
 				.setIcon("copy")
 				.setTooltip("Duplicar botão")
 				.onClick(async () => {
-					const copia = duplicarBotao(quadrante, indice);
-					// Abre a cópia já expandida: quem duplica vai editar a diferença em seguida, e
-					// achá-la fechada no meio da lista seria um clique a mais em cima do óbvio.
-					if (copia) abrirAcordeao(`${copia.id}:estilo`);
+					// Sem abrir acordeão: a aparência do botão saiu daqui para a tela "Botões", e a
+					// cópia não tem mais seção própria para expandir.
+					duplicarBotao(quadrante, indice);
 					await this.aplicar();
 				}),
 		);
@@ -2001,35 +2087,28 @@ export class PainelConfigDashCards extends PluginSettingTab {
 			this.desenharCriarNota(linha, botao);
 		}
 
-		// Terceira linha: a aparência SÓ deste botão — a camada de cima da herança. É o que
-		// permite um botão verde e um vermelho no mesmo quadrante.
-		const secaoEstilo = criarAcordeao(linha, {
-			chave: `${botao.id}:estilo`,
-			titulo: "Aparência deste botão",
-			aninhado: true,
-		});
-
-		secaoEstilo.sePreenchido((corpo) => {
-			this.desenharCorDoBotao(corpo, botao);
-
-			this.desenharEstiloBotao(corpo, {
-				alvo: (botao.estilo ??= {}),
-				camada: "botao",
-				global: this.plugin.dados.estiloBotaoGlobal,
-				doQuadrante: quadrante.estiloBotao,
-				doBotao: botao.estilo,
-			});
-
-			new Setting(corpo).addButton((b) =>
+		// A aparência de um botão individual NÃO se edita aqui — foi decisão dela: ou o botão já
+		// nasce certo (configurado na tela "Botões"), ou o QUADRANTE INTEIRO é sobreposto, no
+		// acordeão "Aparência dos botões" do card. Um terceiro lugar de ajustar a mesma coisa era
+		// justamente o que confundia.
+		//
+		// A camada do botão continua existindo no modelo (`botao.estilo`): o que sai é o editor
+		// daqui. Um botão que já tinha ajuste próprio segue desenhado com ele — apagá-lo por causa
+		// de uma mudança de painel perderia trabalho dela (a regra da s20).
+		if (this.temEstiloProprio(botao.estilo)) {
+			const aviso = new Setting(linha)
+				.setClass("dash-home-config-botao-destino")
+				.setDesc("Este botão tem ajustes de aparência próprios, de uma versão anterior.");
+			aviso.addExtraButton((b) =>
 				b
-					.setButtonText("Voltar ao estilo do quadrante")
-					.setTooltip("Descarta os ajustes deste botão")
+					.setIcon("rotate-ccw")
+					.setTooltip("Descartar e seguir o quadrante")
 					.onClick(async () => {
 						botao.estilo = {};
 						await this.aplicar();
 					}),
 			);
-		});
+		}
 	}
 
 	/**

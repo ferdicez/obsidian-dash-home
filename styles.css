@@ -464,6 +464,55 @@
 	color: var(--text-muted);
 }
 
+/* ── As duas telas do painel ─────────────────────────────────────────────────────────────
+ *
+ * Abas no topo, no vocabulário do próprio Obsidian (a linha embaixo da aba ativa é o mesmo sinal
+ * que ele usa nas abas de nota). Não é uma paleta própria: as cores saem todas das variáveis do
+ * tema, para o painel não brigar com o tema que ela escolheu. */
+.dash-home-config-abas {
+	display: flex;
+	gap: 0.2em;
+	margin-bottom: 1em;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.dash-home-config-aba {
+	display: flex;
+	align-items: center;
+	gap: 0.45em;
+	padding: 0.55em 0.9em;
+	background: transparent;
+	border: none;
+	border-radius: 0;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+	/* A linha da aba ativa é desenhada aqui (e não com border-bottom) para não somar 1px à altura
+	   e fazer as abas dançarem ao trocar. */
+	box-shadow: inset 0 -2px 0 transparent;
+}
+
+.dash-home-config-aba:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.dash-home-config-aba.is-ativa {
+	color: var(--text-normal);
+	box-shadow: inset 0 -2px 0 var(--interactive-accent);
+}
+
+.dash-home-config-aba-icone {
+	display: flex;
+	color: currentColor;
+}
+
+.dash-home-config-aba-icone svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
 .dash-home-config-vazio {
 	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
