@@ -95,9 +95,24 @@ export interface Quadrante {
 
 export interface Dashboard {
 	id: string;
+	/**
+	 * O nome da PREDEFINIÇÃO, não de nenhuma nota.
+	 *
+	 * Como o mesmo dashboard pode valer para várias notas (um "mapa de cliente" aplicado a vinte
+	 * clientes), este nome identifica o conjunto de botões no painel — e só lá. Cada nota mantém
+	 * o próprio nome de arquivo, que o plugin nunca toca.
+	 */
 	nome: string;
-	/** Caminho da nota gerada, com extensão ("Home.md"). */
-	caminhoNota: string;
+	/**
+	 * As notas em que este dashboard é escrito, com extensão ("Clientes/Acme.md").
+	 *
+	 * É uma lista porque a mesma configuração de botões costuma servir a várias notas do mesmo
+	 * tipo. Mudar um botão aqui atualiza todas elas no próximo salvamento — é o que faz disto uma
+	 * predefinição em vez de uma cópia.
+	 *
+	 * Lista vazia é válido: um dashboard em montagem, ainda sem destino.
+	 */
+	caminhosNota: string[];
 	/** Quantas colunas o grid tem em tela larga. Entre 1 e 4. */
 	colunas: number;
 	/**
@@ -168,9 +183,10 @@ export const DADOS_PADRAO: DadosDashHome = {
 	dashboards: [
 		{
 			id: DASHBOARD_PADRAO_ID,
-			// "Dash Home" é o plugin; a nota se chama "Home" porque é o que ela é para a usuária.
+			// "Dash Home" é o plugin; a predefinição se chama "Home" porque é o primeiro uso dela.
+			// Nada aqui trata essa nota como especial — qualquer nota pode receber um dashboard.
 			nome: "Home",
-			caminhoNota: "Home.md",
+			caminhosNota: ["Home.md"],
 			colunas: 3,
 			largura: "leitura",
 			quadrantes: [],
@@ -187,7 +203,7 @@ export const DADOS_PADRAO: DadosDashHome = {
 const DASHBOARD_VAZIO: Dashboard = Object.freeze({
 	id: "",
 	nome: "",
-	caminhoNota: "",
+	caminhosNota: Object.freeze([]) as unknown as string[],
 	colunas: 3,
 	largura: "leitura",
 	quadrantes: Object.freeze([]) as unknown as Quadrante[],
@@ -228,6 +244,52 @@ export function limitarLargura(valor: unknown): "leitura" | "total" | number {
 	return "leitura";
 }
 
+/**
+ * As notas de um dashboard, aceitando o formato antigo.
+ *
+ * Até a 0.2.1 o campo era `caminhoNota: string` (uma nota só). Um data.json salvo naquela versão
+ * — que é o caso do vault de trabalho dela — precisa continuar funcionando sem perder o destino
+ * já configurado, então o valor antigo vira o primeiro item da lista.
+ *
+ * A migração é só de LEITURA: o campo antigo não é apagado do objeto aqui. Se ela voltar para uma
+ * versão anterior do plugin, o dashboard ainda aponta para a nota certa.
+ */
+function migrarCaminhos(dash: Dashboard & { caminhoNota?: unknown }): string[] {
+	const limpar = (lista: unknown[]): string[] => {
+		const vistos = new Set<string>();
+		const saida: string[] = [];
+		for (const item of lista) {
+			if (typeof item !== "string") continue;
+			const caminho = item.trim();
+			// Caminho vazio viraria ".md" — um arquivo oculto e sem nome (o bug da sessão 3).
+			if (!caminho) continue;
+			// Duas entradas iguais fariam a mesma nota ser escrita duas vezes por salvamento.
+			const chave = caminho.toLowerCase();
+			if (vistos.has(chave)) continue;
+			vistos.add(chave);
+			saida.push(caminho);
+		}
+		return saida;
+	};
+
+	if (Array.isArray(dash.caminhosNota)) {
+		const lista = limpar(dash.caminhosNota);
+		// Se a lista existe mas ficou vazia depois da limpeza, o formato antigo ainda pode ter o
+		// destino real — vale mais tentar recuperá-lo do que devolver um dashboard sem nota.
+		if (lista.length > 0) return lista;
+	}
+
+	if (typeof dash.caminhoNota === "string") {
+		const antigo = limpar([dash.caminhoNota]);
+		if (antigo.length > 0) return antigo;
+	}
+
+	// Sem nada aproveitável: lista vazia. Não inventamos `${nome}.md` como antes, porque agora o
+	// nome é da predefinição e não de uma nota — gerar um arquivo a partir dele criaria uma nota
+	// que ela não pediu.
+	return [];
+}
+
 export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 	const data = await plugin.loadData();
 	// Object.assign raso (padrão dos outros plugins do vault): um campo novo adicionado ao
@@ -251,7 +313,7 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 	for (const dash of dados.dashboards) {
 		dash.colunas = limitarColunas(dash.colunas);
 		dash.largura = limitarLargura(dash.largura);
-		if (typeof dash.caminhoNota !== "string" || !dash.caminhoNota) dash.caminhoNota = `${dash.nome || "Home"}.md`;
+		dash.caminhosNota = migrarCaminhos(dash);
 		if (!Array.isArray(dash.quadrantes)) dash.quadrantes = [];
 		for (const quad of dash.quadrantes) {
 			if (quad.estilo && typeof quad.estilo !== "object") delete quad.estilo;
@@ -327,7 +389,9 @@ export function criarDashboard(dados: DadosDashHome, nome: string): Dashboard {
 	const dashboard: Dashboard = {
 		id: novoId("d"),
 		nome: limpo,
-		caminhoNota: caminhoLivre(dados, `${limpo}.md`),
+		// Nasce sem nota: o nome é da predefinição, não de um arquivo. Criar `${nome}.md` na
+		// surdina geraria uma nota que ela não pediu — e o painel já oferece "Aplicar em…".
+		caminhosNota: [],
 		colunas: 3,
 		largura: "leitura",
 		quadrantes: [],
@@ -337,18 +401,22 @@ export function criarDashboard(dados: DadosDashHome, nome: string): Dashboard {
 }
 
 /**
- * Um caminho de nota que nenhum outro dashboard já usa. Dois dashboards apontando para a mesma
- * nota fariam um sobrescrever o outro a cada salvamento — silenciosamente, que é o pior jeito.
+ * O dashboard que já escreve nesta nota, se houver outro.
+ *
+ * Duas predefinições na mesma nota fariam uma sobrescrever a outra a cada salvamento —
+ * silenciosamente, que é o pior jeito de perder trabalho. Continua valendo com a lista: o que
+ * mudou é que agora a busca varre várias notas por dashboard.
  */
-function caminhoLivre(dados: DadosDashHome, desejado: string): string {
-	const emUso = new Set(dados.dashboards.map((d) => d.caminhoNota.toLowerCase()));
-	if (!emUso.has(desejado.toLowerCase())) return desejado;
-	const base = desejado.replace(/\.md$/i, "");
-	for (let i = 2; i < 100; i++) {
-		const tentativa = `${base} ${i}.md`;
-		if (!emUso.has(tentativa.toLowerCase())) return tentativa;
-	}
-	return `${base} ${novoId("n")}.md`;
+export function dashboardQueUsaNota(
+	dados: DadosDashHome,
+	caminho: string,
+	excetoId: string,
+): Dashboard | undefined {
+	const alvo = caminho.trim().toLowerCase();
+	if (!alvo) return undefined;
+	return dados.dashboards.find(
+		(d) => d.id !== excetoId && d.caminhosNota.some((c) => c.trim().toLowerCase() === alvo),
+	);
 }
 
 /**

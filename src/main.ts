@@ -63,10 +63,10 @@ export default class DashHomePlugin extends Plugin {
 		this.addSettingTab(new PainelConfigDashHome(this.app, this));
 	}
 
-	/** Persiste e regrava a nota do dashboard ativo — o fluxo normal de qualquer edição no painel. */
+	/** Persiste e regrava as notas do dashboard ativo — o fluxo normal de qualquer edição no painel. */
 	async salvar(): Promise<void> {
 		await salvarDados(this, this.dados);
-		await this.gerarNota(dashboardAtivo(this.dados));
+		await this.gerarNotas(dashboardAtivo(this.dados));
 	}
 
 	/** Persiste sem tocar em nota. Para mudanças que não afetam o conteúdo gerado (ex.: trocar o ativo). */
@@ -75,28 +75,59 @@ export default class DashHomePlugin extends Plugin {
 	}
 
 	/**
-	 * Escreve a nota de um dashboard com os estilos globais atuais.
+	 * Escreve as notas de um dashboard com os estilos globais atuais.
 	 *
 	 * Existe para que os três pontos de escrita não repitam quais globais passar: um estilo novo
 	 * adicionado ao modelo entra aqui, uma vez, em vez de em cada chamador (e ficar faltando em um
 	 * deles seria um bug silencioso — a nota sairia sem parte da aparência).
 	 */
-	private gerarNota(dashboard: Dashboard): Promise<TFile | null> {
+	private gerarNotas(dashboard: Dashboard): Promise<TFile[]> {
 		return escreverDashboard(this.app, dashboard, this.dados.estiloGlobal, this.dados.estiloBotaoGlobal);
 	}
 
-	/** Garante que a nota existe e a abre. */
+	/**
+	 * Garante que as notas existem e abre a primeira.
+	 *
+	 * A primeira, e não todas: um dashboard aplicado a vinte notas abriria vinte abas. Quem quer
+	 * uma nota específica a abre pela lista do painel.
+	 */
 	async abrirDashboard(dashboard: Dashboard): Promise<void> {
-		const arquivo = await this.gerarNota(dashboard);
-		if (!(arquivo instanceof TFile)) return; // escreverDashboard já avisou o que houve
+		const arquivos = await this.gerarNotas(dashboard);
+		const primeiro = arquivos[0];
+		if (!(primeiro instanceof TFile)) {
+			// Sem nota nenhuma não há o que abrir — e é um estado normal num dashboard recém-criado,
+			// então a mensagem diz o que fazer em vez de parecer erro.
+			if ((dashboard.caminhosNota?.length ?? 0) === 0) {
+				new Notice(`O dashboard "${dashboard.nome}" ainda não foi aplicado a nenhuma nota.`);
+			}
+			return; // se havia notas, escreverDashboard já avisou o que houve
+		}
+		await this.app.workspace.getLeaf(false).openFile(primeiro);
+	}
+
+	/**
+	 * Abre uma nota específica do dashboard, sem regerar nada.
+	 *
+	 * Diferente de `abrirDashboard`: aqui a nota já é conhecida (veio da lista do painel), e
+	 * escrever de novo só para abrir seria trabalho à toa.
+	 */
+	async abrirNota(caminho: string): Promise<void> {
+		const arquivo = this.app.vault.getAbstractFileByPath(caminho);
+		if (!(arquivo instanceof TFile)) {
+			// A nota ainda não existe se o dashboard nunca foi salvo depois de apontá-la.
+			new Notice(`A nota "${caminho}" ainda não existe. Ela é criada no próximo salvamento.`);
+			return;
+		}
 		await this.app.workspace.getLeaf(false).openFile(arquivo);
 	}
 
 	private async regerarTodos(): Promise<void> {
-		let ok = 0;
+		let notas = 0;
 		for (const dashboard of this.dados.dashboards) {
-			if (await this.gerarNota(dashboard)) ok++;
+			notas += (await this.gerarNotas(dashboard)).length;
 		}
-		new Notice(`${ok} de ${this.dados.dashboards.length} nota(s) regerada(s).`);
+		// Conta NOTAS, não dashboards: com predefinições em várias notas, "3 de 3 dashboards" não
+		// diria quanto trabalho foi feito de fato.
+		new Notice(`${notas} nota(s) regerada(s).`);
 	}
 }

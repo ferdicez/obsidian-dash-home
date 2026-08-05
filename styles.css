@@ -417,6 +417,22 @@
 	padding: 0.5em 0;
 }
 
+/* Cada nota em que o dashboard é escrito. Recuo e fonte menor para a lista se ler como
+ * subordinada ao cabeçalho "Notas deste dashboard", e não como configurações independentes. */
+.dash-home-config-nota-linha {
+	padding: 0.35em 0 0.35em 1em;
+	border-top: none;
+}
+
+.dash-home-config-nota-linha .setting-item-name {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	/* Caminho longo (uma nota em subpasta funda) trunca em vez de empurrar os botões para fora. */
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
 /* Uma explicação curta no topo de uma seção — para dizer o alcance do que vem abaixo (ex.: "vale
  * para os botões deste quadrante"). Diferente de `config-vazio`: não é ausência, é contexto. */
 .dash-home-config-nota {

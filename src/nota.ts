@@ -149,16 +149,41 @@ function aspas(valor: string): string {
 }
 
 /**
- * Escreve o dashboard na sua nota, criando o arquivo (e as pastas do caminho) se preciso.
- * Devolve o arquivo escrito, ou null se falhou — o chamador decide se avisa a usuária.
+ * Escreve o dashboard em TODAS as suas notas.
+ *
+ * Um dashboard é uma predefinição: a mesma configuração de botões pode valer para várias notas
+ * (um "mapa de cliente" aplicado a vinte clientes). Mexer num botão atualiza todas no próximo
+ * salvamento — é isso que o torna predefinição em vez de cópia.
+ *
+ * Devolve os arquivos escritos com sucesso. Uma nota que falha não interrompe as outras: com
+ * vinte notas, uma pasta renomeada não pode impedir que as dezenove restantes atualizem.
  */
 export async function escreverDashboard(
 	app: App,
 	dashboard: Dashboard,
 	estiloGlobal?: EstiloQuadrante,
 	estiloBotaoGlobal?: EstiloBotao,
+): Promise<TFile[]> {
+	const escritos: TFile[] = [];
+	for (const caminho of dashboard.caminhosNota ?? []) {
+		const arquivo = await escreverEmUmaNota(app, dashboard, caminho, estiloGlobal, estiloBotaoGlobal);
+		if (arquivo) escritos.push(arquivo);
+	}
+	return escritos;
+}
+
+/**
+ * Escreve o dashboard numa nota, criando o arquivo (e as pastas do caminho) se preciso.
+ * Devolve o arquivo escrito, ou null se falhou — o chamador decide se avisa a usuária.
+ */
+async function escreverEmUmaNota(
+	app: App,
+	dashboard: Dashboard,
+	caminhoBruto: string,
+	estiloGlobal?: EstiloQuadrante,
+	estiloBotaoGlobal?: EstiloBotao,
 ): Promise<TFile | null> {
-	const bruto = dashboard.caminhoNota?.trim() ?? "";
+	const bruto = caminhoBruto?.trim() ?? "";
 	// Um caminho vazio viraria ".md" — um arquivo oculto e sem nome. Melhor não escrever nada e
 	// deixar a usuária apontar a nota pelo seletor.
 	if (!bruto) return null;

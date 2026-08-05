@@ -6,6 +6,7 @@ import {
 	criarDashboard,
 	criarQuadrante,
 	dashboardAtivo,
+	dashboardQueUsaNota,
 	ehHex,
 	limitarColunas,
 	limitarLargura,
@@ -240,50 +241,7 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				}),
 			);
 
-		// A nota é apontada por seletor, não digitada: a usuária indica qual nota é o dashboard do
-		// mesmo jeito que indica o destino de um botão. Digitar caminho à mão é a única parte onde
-		// ela ainda precisaria acertar uma string exata — e é justamente o que o plugin evita.
-		new Setting(el)
-			.setName("Nota do dashboard")
-			.setDesc(
-				dashboard.caminhoNota
-					? `O dashboard é escrito em "${dashboard.caminhoNota}". Aponte a nota inicial do Obsidian para ela.`
-					: "Escolha em qual nota este dashboard é escrito.",
-			)
-			.addButton((botao) =>
-				botao
-					.setButtonText(dashboard.caminhoNota || "Escolher nota…")
-					.setTooltip(dashboard.caminhoNota || "Escolher a nota do dashboard")
-					.onClick(() => {
-						new ModalEscolherNota(this.app, async (caminho) => {
-							if (!this.conferirNotaLivre(caminho, dashboard)) return;
-							dashboard.caminhoNota = caminho;
-							await this.aplicar();
-						}).open();
-					}),
-			)
-			.addButton((botao) =>
-				botao
-					.setButtonText("Criar nova")
-					.setTooltip("Criar uma nota nova para este dashboard")
-					.onClick(() => {
-						new ModalNomeDaNota(this.app, dashboard.nome, async (caminho) => {
-							if (!this.conferirNotaLivre(caminho, dashboard)) return;
-							dashboard.caminhoNota = caminho;
-							// aplicar() já chama escreverDashboard, que cria o arquivo se não existir.
-							await this.aplicar();
-							new Notice(`Nota "${caminho}" criada.`);
-						}).open();
-					}),
-			)
-			.addExtraButton((botao) =>
-				botao
-					.setIcon("external-link")
-					.setTooltip("Abrir a nota")
-					.onClick(async () => {
-						await this.plugin.abrirDashboard(dashboard);
-					}),
-			);
+		this.desenharNotas(el, dashboard);
 
 		new Setting(el)
 			.setName("Grade")
@@ -1606,14 +1564,108 @@ export class PainelConfigDashHome extends PluginSettingTab {
 	}
 
 	/**
+	 * As notas em que este dashboard é escrito.
+	 *
+	 * É uma LISTA porque o dashboard é uma predefinição: a mesma configuração de botões costuma
+	 * servir a várias notas do mesmo tipo (um "mapa de cliente" aplicado a vinte clientes). Mexer
+	 * num botão atualiza todas — o que é o ponto, e por isso está dito na descrição.
+	 *
+	 * As notas são apontadas por seletor, nunca digitadas: acertar uma string exata é justamente
+	 * o que o plugin evita (e o que causou o bug de caixa da sessão 3).
+	 */
+	private desenharNotas(el: HTMLElement, dashboard: Dashboard): void {
+		const notas = (dashboard.caminhosNota ??= []);
+
+		const cabecalho = new Setting(el)
+			.setName("Notas deste dashboard")
+			.setDesc(
+				notas.length === 0
+					? "Escolha em quais notas este dashboard é escrito. Pode ser mais de uma."
+					: notas.length === 1
+						? "Este dashboard é escrito nesta nota. Dá para aplicá-lo em mais de uma."
+						: `Este dashboard é escrito em ${notas.length} notas. Mudanças valem para todas.`,
+			);
+
+		cabecalho.addButton((botao) =>
+			botao
+				.setButtonText("Aplicar em…")
+				.setTooltip("Escrever este dashboard também em outra nota")
+				.onClick(() => {
+					new ModalEscolherNota(this.app, async (caminho) => {
+						if (!this.conferirNotaLivre(caminho, dashboard)) return;
+						notas.push(caminho);
+						await this.aplicar();
+					}).open();
+				}),
+		);
+
+		cabecalho.addButton((botao) =>
+			botao
+				.setButtonText("Criar nova")
+				.setTooltip("Criar uma nota nova com este dashboard")
+				.onClick(() => {
+					new ModalNomeDaNota(this.app, dashboard.nome, async (caminho) => {
+						if (!this.conferirNotaLivre(caminho, dashboard)) return;
+						notas.push(caminho);
+						// aplicar() já chama escreverDashboard, que cria o arquivo se não existir.
+						await this.aplicar();
+						new Notice(`Nota "${caminho}" criada.`);
+					}).open();
+				}),
+		);
+
+		if (notas.length === 0) {
+			el.createDiv({
+				cls: "dash-home-config-vazio",
+				text: "Nenhuma nota ainda — o dashboard existe, mas não é escrito em lugar nenhum.",
+			});
+			return;
+		}
+
+		for (const [i, caminho] of notas.entries()) {
+			const linha = new Setting(el).setClass("dash-home-config-nota-linha");
+			linha.setName(caminho);
+
+			linha.addExtraButton((b) =>
+				b
+					.setIcon("external-link")
+					.setTooltip("Abrir esta nota")
+					.onClick(async () => {
+						await this.plugin.abrirNota(caminho);
+					}),
+			);
+
+			linha.addExtraButton((b) =>
+				b
+					.setIcon("x")
+					.setTooltip("Parar de escrever nesta nota")
+					.onClick(async () => {
+						// Só desvincula: o arquivo e o bloco já escrito continuam onde estão.
+						// Apagar nota da usuária sem ela pedir é destrutivo demais.
+						notas.splice(i, 1);
+						new Notice(`"${caminho}" não recebe mais este dashboard. A nota continua no vault.`);
+						await this.aplicar();
+					}),
+			);
+		}
+	}
+
+	/**
 	 * Recusa apontar dois dashboards para a mesma nota. Sem isto, um sobrescreveria o outro a cada
 	 * salvamento — silenciosamente, que é o pior jeito de perder trabalho.
+	 *
+	 * Também recusa a mesma nota duas vezes no mesmo dashboard, que faria a nota ser escrita duas
+	 * vezes por salvamento sem nenhum ganho.
 	 */
 	private conferirNotaLivre(caminho: string, dashboard: Dashboard): boolean {
 		const alvo = caminho.trim().toLowerCase();
-		const conflito = this.plugin.dados.dashboards.find(
-			(d) => d.id !== dashboard.id && d.caminhoNota.trim().toLowerCase() === alvo,
-		);
+
+		if (dashboard.caminhosNota?.some((c) => c.trim().toLowerCase() === alvo)) {
+			new Notice(`Este dashboard já é escrito em "${caminho}".`);
+			return false;
+		}
+
+		const conflito = dashboardQueUsaNota(this.plugin.dados, caminho, dashboard.id);
 		if (conflito) {
 			new Notice(`A nota "${caminho}" já é usada pelo dashboard "${conflito.nome}". Escolha outra.`);
 			return false;
