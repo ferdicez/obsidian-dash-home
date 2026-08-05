@@ -107,6 +107,26 @@ export function gerarBloco(
 			linhas.push(`        tipo: ${botao.tipo}`);
 			linhas.push(`        destino: ${aspas(botao.destino)}`);
 
+			// As propriedades que o botão altera na nota aberta. Vão para o bloco pelo mesmo motivo
+			// que o estilo: o bloco é o registro do que foi configurado, e um botão descrito só
+			// como "tipo: propriedade" não diria o que ele faz. `aspas()` (JSON.stringify) é o que
+			// impede um valor com crases ou dois-pontos de envenenar o bloco.
+			const mudancas = botao.propriedades ?? [];
+			if (mudancas.length > 0) {
+				linhas.push(`        propriedades:`);
+				for (const mudanca of mudancas) {
+					linhas.push(`          - nome: ${aspas(mudanca.nome)}`);
+					linhas.push(`            operacao: ${mudanca.operacao}`);
+					linhas.push(`            tipo: ${mudanca.tipo}`);
+					linhas.push(`            valor: ${aspas(mudanca.valor)}`);
+					// Só no alternar: no definir ele não existe, e escrever `valor2: ""` sugeriria
+					// um segundo valor que o botão nunca usa.
+					if (mudanca.operacao === "alternar") {
+						linhas.push(`            valor2: ${aspas(mudanca.valor2 ?? "")}`);
+					}
+				}
+			}
+
 			// A camada de cima da herança: só o que ESTE botão define, não o que ele herda.
 			const entradasDoBotao = entradasDefinidas(botao.estilo);
 			if (entradasDoBotao.length > 0) {

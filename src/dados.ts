@@ -18,7 +18,39 @@ import { normalizarEstiloBotao, type EstiloBotao } from "./estilo-botao";
  */
 
 /** O que um botão faz ao ser clicado. */
-export type TipoAcao = "nota" | "pasta" | "busca" | "comando";
+export type TipoAcao = "nota" | "pasta" | "busca" | "comando" | "propriedade";
+
+/**
+ * O que fazer com uma propriedade (campo do frontmatter) da nota aberta:
+ * - "definir": grava `valor`, seja qual for o conteúdo atual
+ * - "alternar": se o atual for `valor`, grava `valor2`; senão, grava `valor`
+ *
+ * "alternar" existe porque o uso mais comum de um botão de propriedade é um interruptor de estado
+ * ("a fazer" ↔ "feito"), e com "definir" isso exigiria dois botões e a usuária escolhendo qual
+ * clicar — ou seja, ela teria que saber o estado atual de cabeça.
+ */
+export type OperacaoPropriedade = "definir" | "alternar";
+
+/**
+ * O TIPO do valor gravado no frontmatter.
+ *
+ * Importa porque o frontmatter do Obsidian é YAML tipado: `status: 3` é número e `status: "3"` é
+ * texto, e uma Base que filtra por número não acha o texto. Como o painel só tem campos de texto,
+ * sem isto tudo viraria string e as propriedades de checkbox/número da usuária parariam de casar.
+ */
+export type TipoValorPropriedade = "texto" | "numero" | "booleano" | "data" | "vazio";
+
+export interface MudancaPropriedade {
+	id: string;
+	/** O nome da propriedade no frontmatter ("status", "cliente"). */
+	nome: string;
+	operacao: OperacaoPropriedade;
+	tipo: TipoValorPropriedade;
+	/** O valor gravado, sempre como texto; convertido conforme `tipo` na hora de escrever. */
+	valor: string;
+	/** O segundo valor do "alternar". Ignorado quando a operação é "definir". */
+	valor2?: string;
+}
 
 export interface Botao {
 	id: string;
@@ -32,8 +64,17 @@ export interface Botao {
 	 * - pasta: caminho da pasta ("Clientes")
 	 * - busca: a query de busca ("tag:#cliente")
 	 * - comando: id do comando ("my-tasks:abrir-kanban")
+	 * - propriedade: não usado (as mudanças ficam em `propriedades`)
 	 */
 	destino: string;
+	/**
+	 * As propriedades alteradas na nota aberta, quando `tipo === "propriedade"`.
+	 *
+	 * É uma LISTA porque uma mudança de estado costuma mexer em mais de um campo de uma vez
+	 * ("arquivar" = `status: arquivado` + `arquivado: true`), e fazer isso com dois botões deixaria
+	 * a nota num estado pela metade se ela clicasse só um.
+	 */
+	propriedades?: MudancaPropriedade[];
 	/**
 	 * Aparência só deste botão; o que não define, herda do quadrante e depois do global.
 	 * É a terceira camada da herança — ver `estilo-botao.ts`.
@@ -331,6 +372,7 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 			for (const botao of quad.botoes) {
 				if (!TIPOS_VALIDOS.has(botao.tipo)) botao.tipo = "nota";
 				botao.estilo = normalizarEstiloBotao(botao.estilo);
+				botao.propriedades = normalizarPropriedades(botao.propriedades);
 			}
 		}
 	}
@@ -338,7 +380,67 @@ export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
 	return dados;
 }
 
-const TIPOS_VALIDOS = new Set<string>(["nota", "pasta", "busca", "comando"]);
+const TIPOS_VALIDOS = new Set<string>(["nota", "pasta", "busca", "comando", "propriedade"]);
+
+const OPERACOES_VALIDAS = new Set<string>(["definir", "alternar"]);
+const TIPOS_VALOR_VALIDOS = new Set<string>(["texto", "numero", "booleano", "data", "vazio"]);
+
+/**
+ * Blindagem da lista de propriedades vinda do data.json.
+ *
+ * Uma mudança SEM NOME é descartada, e não corrigida para um nome qualquer: o nome é a chave que
+ * vai ser escrita no frontmatter da usuária, e inventar um significa gravar um campo que ela nunca
+ * pediu numa nota dela. Já operação e tipo inválidos caem no padrão, porque aí só o comportamento
+ * é ambíguo — o alvo continua sendo o que ela escolheu.
+ *
+ * Devolve `undefined` (e não lista vazia) quando não sobra nada, para a chave sumir do data.json.
+ */
+export function normalizarPropriedades(valor: unknown): MudancaPropriedade[] | undefined {
+	if (!Array.isArray(valor)) return undefined;
+
+	const saida: MudancaPropriedade[] = [];
+	for (const item of valor) {
+		if (!item || typeof item !== "object") continue;
+		const bruto = item as Partial<MudancaPropriedade>;
+		const nome = typeof bruto.nome === "string" ? bruto.nome.trim() : "";
+		if (!nome) continue;
+
+		const operacao: OperacaoPropriedade =
+			typeof bruto.operacao === "string" && OPERACOES_VALIDAS.has(bruto.operacao)
+				? (bruto.operacao as OperacaoPropriedade)
+				: "definir";
+		const tipo: TipoValorPropriedade =
+			typeof bruto.tipo === "string" && TIPOS_VALOR_VALIDOS.has(bruto.tipo)
+				? (bruto.tipo as TipoValorPropriedade)
+				: "texto";
+
+		const mudanca: MudancaPropriedade = {
+			id: typeof bruto.id === "string" && bruto.id ? bruto.id : novoId("p"),
+			nome,
+			operacao,
+			tipo,
+			valor: typeof bruto.valor === "string" ? bruto.valor : "",
+		};
+		// Só sobrevive no "alternar": guardar o segundo valor de um "definir" deixaria lixo no
+		// data.json que reapareceria se ela voltasse a alternar depois.
+		if (operacao === "alternar" && typeof bruto.valor2 === "string") mudanca.valor2 = bruto.valor2;
+		saida.push(mudanca);
+	}
+
+	return saida.length > 0 ? saida : undefined;
+}
+
+export function criarMudancaPropriedade(botao: Botao): MudancaPropriedade {
+	const mudanca: MudancaPropriedade = {
+		id: novoId("p"),
+		nome: "",
+		operacao: "definir",
+		tipo: "texto",
+		valor: "",
+	};
+	(botao.propriedades ??= []).push(mudanca);
+	return mudanca;
+}
 
 export async function salvarDados(plugin: Plugin, dados: DadosDashHome): Promise<void> {
 	await plugin.saveData(dados);
@@ -367,7 +469,11 @@ function clonarDashboard(d: Dashboard): Dashboard {
 			...q,
 			estilo: q.estilo ? { ...q.estilo } : undefined,
 			estiloBotao: q.estiloBotao ? { ...q.estiloBotao } : undefined,
-			botoes: q.botoes.map((b) => ({ ...b, estilo: b.estilo ? { ...b.estilo } : undefined })),
+			botoes: q.botoes.map((b) => ({
+				...b,
+				estilo: b.estilo ? { ...b.estilo } : undefined,
+				propriedades: b.propriedades?.map((p) => ({ ...p })),
+			})),
 		})),
 	};
 }

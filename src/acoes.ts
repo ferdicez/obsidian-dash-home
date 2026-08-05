@@ -1,5 +1,6 @@
-import { Notice, TFolder, type App } from "obsidian";
+import { Notice, TFile, TFolder, type App } from "obsidian";
 import type { Botao } from "./dados";
+import { aplicarPropriedades } from "./propriedades";
 
 /**
  * O que acontece quando um botão do dashboard é clicado.
@@ -8,6 +9,12 @@ import type { Botao } from "./dados";
  * fazer nada: um botão que não reage é indistinguível de um plugin quebrado.
  */
 export async function executarAcao(app: App, botao: Botao, novaAba: boolean): Promise<void> {
+	// Antes da checagem de destino: este tipo não usa `destino` — o alvo é a nota aberta, e o que
+	// ele grava está em `propriedades`.
+	if (botao.tipo === "propriedade") {
+		return alterarPropriedades(app, botao);
+	}
+
 	const destino = botao.destino?.trim();
 	if (!destino) {
 		new Notice(`O botão "${botao.texto}" ainda não tem destino. Configurações → Dash Home.`);
@@ -24,6 +31,58 @@ export async function executarAcao(app: App, botao: Botao, novaAba: boolean): Pr
 		case "comando":
 			return rodarComando(app, destino);
 	}
+	// "propriedade" não aparece aqui: o early return acima já o tratou, e o TypeScript o removeu
+	// do tipo neste ponto. Um TipoAcao NOVO, esse sim, continua dando erro de compilação no switch
+	// em vez de virar um botão silenciosamente inerte.
+}
+
+/**
+ * Altera as propriedades (frontmatter) da NOTA ABERTA.
+ *
+ * O alvo é a nota ativa, e não uma nota fixa, porque é isso que torna o botão reutilizável: o mesmo
+ * dashboard aplicado a vinte notas de cliente ganha um botão "Concluir" que age em qualquer uma
+ * delas. A contrapartida é que sem nota aberta não há o que alterar — daí o aviso.
+ */
+async function alterarPropriedades(app: App, botao: Botao): Promise<void> {
+	const mudancas = (botao.propriedades ?? []).filter((m) => m.nome?.trim());
+	if (mudancas.length === 0) {
+		new Notice(`O botão "${botao.texto}" ainda não tem propriedade configurada. Configurações → Dash Home.`);
+		return;
+	}
+
+	// getActiveFile e não `workspace.getActiveViewOfType`: o dashboard costuma ser clicado da própria
+	// nota que o contém, e ela é justamente o arquivo ativo.
+	const arquivo = app.workspace.getActiveFile();
+	if (!(arquivo instanceof TFile)) {
+		new Notice("Abra uma nota para o botão alterar as propriedades dela.");
+		return;
+	}
+	if (arquivo.extension !== "md") {
+		new Notice(`"${arquivo.name}" não é uma nota — só notas têm propriedades.`);
+		return;
+	}
+
+	let resumo: string[] = [];
+	try {
+		// processFrontMatter cria o bloco de propriedades se ainda não existir, faz o merge com o que
+		// já está lá e reescreve só ele — o corpo da nota não é tocado.
+		await app.fileManager.processFrontMatter(arquivo, (frontmatter) => {
+			resumo = aplicarPropriedades(frontmatter, mudancas);
+		});
+	} catch (e) {
+		console.warn("[dash-home] falha ao alterar as propriedades da nota:", e);
+		new Notice(`Não consegui alterar as propriedades de "${arquivo.basename}".`);
+		return;
+	}
+
+	if (resumo.length === 0) {
+		new Notice(`Nada a alterar em "${arquivo.basename}".`);
+		return;
+	}
+
+	// Dizer o que mudou, e em qual nota: a alteração acontece no frontmatter, que pode estar fora da
+	// tela (ou recolhido), então sem a Notice o clique não teria retorno visível nenhum.
+	new Notice(`${arquivo.basename} — ${resumo.join(", ")}`);
 }
 
 async function abrirNota(app: App, caminho: string, novaAba: boolean): Promise<void> {

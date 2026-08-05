@@ -495,6 +495,55 @@
 	white-space: nowrap;
 }
 
+/* No tipo "Alterar propriedades" não há destino a escolher, e a linha passa a carregar só a
+   explicação de que o alvo é a nota aberta — que é justamente o `setting-item-info` escondido
+   acima. A classe repetida soma especificidade sobre aquela regra (mesmo truque do swatch). */
+.dash-home-config-botao-destino.dash-home-config-botao-destino:has(.setting-item-description)
+	.setting-item-info {
+	display: block;
+}
+
+/* ── Propriedades alteradas pelo botão ────────────────────────────────────────────────────
+   Cada mudança é uma caixa própria: são até quatro controles por linha (propriedade, operação,
+   tipo, valores) e sem o agrupamento não se vê onde uma termina e a outra começa. */
+
+.dash-home-config-propriedade {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	padding: 0 0.6em;
+	margin: 0 0 0.4em 1em;
+	background: var(--background-primary);
+}
+
+.dash-home-config-propriedade .setting-item {
+	border: none;
+	padding: 0.35em 0;
+}
+
+.dash-home-config-propriedade-alvo .setting-item-info {
+	display: none;
+}
+
+.dash-home-config-propriedade-alvo .setting-item-control {
+	justify-content: flex-start;
+	flex-wrap: wrap;
+}
+
+/* O nome da propriedade escolhida pode ser longo; trunca em vez de empurrar os dropdowns. */
+.dash-home-config-propriedade-alvo .setting-item-control > button {
+	max-width: 14em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* A frase "Se X já for A, passa a B" é o único lugar onde a regra do alternar aparece —
+   precisa caber inteira, então ocupa a linha toda em vez de dividir espaço com os campos. */
+.dash-home-config-propriedade-valores .setting-item-description {
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
 /* ── Acordeão ─────────────────────────────────────────────────────────────────────────────
    Portado do painel do My Tasks, a pedido da usuária. Sem moldura: só a linha divisória
    embaixo e o recuo do corpo dão a leitura de hierarquia. */

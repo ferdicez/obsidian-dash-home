@@ -4,6 +4,7 @@ import {
 	CORES,
 	criarBotao,
 	criarDashboard,
+	criarMudancaPropriedade,
 	criarQuadrante,
 	dashboardAtivo,
 	dashboardQueUsaNota,
@@ -16,8 +17,11 @@ import {
 	type Botao,
 	type DadosDashHome,
 	type Dashboard,
+	type MudancaPropriedade,
+	type OperacaoPropriedade,
 	type Quadrante,
 	type TipoAcao,
+	type TipoValorPropriedade,
 } from "./dados";
 import { resolverEstilo, type EstiloQuadrante, type PosicaoBarra } from "./estilo";
 import {
@@ -41,6 +45,7 @@ import {
 	ModalEscolherIcone,
 	ModalEscolherNota,
 	ModalEscolherPasta,
+	ModalEscolherPropriedade,
 } from "./seletores";
 
 /**
@@ -1437,6 +1442,10 @@ export class PainelConfigDashHome extends PluginSettingTab {
 
 		this.desenharDestino(linha, botao);
 
+		if (botao.tipo === "propriedade") {
+			this.desenharPropriedades(linha, botao);
+		}
+
 		// Terceira linha: a aparência SÓ deste botão — a camada de cima da herança. É o que
 		// permite um botão verde e um vermelho no mesmo quadrante.
 		const secaoEstilo = criarAcordeao(linha, {
@@ -1476,15 +1485,26 @@ export class PainelConfigDashHome extends PluginSettingTab {
 			drop.addOption("pasta", "Abrir pasta");
 			drop.addOption("busca", "Buscar");
 			drop.addOption("comando", "Rodar comando");
+			drop.addOption("propriedade", "Alterar propriedades");
 			drop.setValue(botao.tipo);
 			drop.onChange(async (valor) => {
 				// O destino antigo não faz sentido no tipo novo (um caminho de nota não é uma query
 				// de busca), então limpamos — melhor um campo vazio do que um destino que falha.
 				botao.tipo = valor as TipoAcao;
 				botao.destino = "";
+				// As propriedades NÃO são apagadas ao sair do tipo: trocar para "Abrir nota" e voltar
+				// devolve o que ela tinha montado, do mesmo jeito que trocar o conteúdo do quadrante
+				// não apaga os botões. O que não é do tipo atual apenas não é usado.
 				await this.aplicar();
 			});
 		});
+
+		if (botao.tipo === "propriedade") {
+			// O alvo é sempre a nota aberta, então não há destino a escolher — só a lista de
+			// mudanças, que vai logo abaixo em `desenharPropriedades`.
+			destino.setDesc("Altera a nota que estiver aberta no momento do clique.");
+			return;
+		}
 
 		if (botao.tipo === "busca") {
 			// Busca é o único tipo cujo destino é texto livre: não há lista de queries para escolher.
@@ -1529,6 +1549,187 @@ export class PainelConfigDashHome extends PluginSettingTab {
 				await salvar(id);
 			}).open();
 		}
+	}
+
+	/**
+	 * As propriedades que o botão altera na nota aberta.
+	 *
+	 * É uma LISTA porque uma mudança de estado costuma mexer em mais de um campo de uma vez
+	 * ("arquivar" = `status: arquivado` + `arquivado: true`). Com um botão por propriedade, ela
+	 * teria que clicar dois — e esquecer o segundo deixaria a nota num estado pela metade.
+	 */
+	private desenharPropriedades(el: HTMLElement, botao: Botao): void {
+		const mudancas = botao.propriedades ?? [];
+
+		const cabecalho = new Setting(el)
+			.setName("Propriedades alteradas")
+			.setDesc(
+				mudancas.length === 0
+					? "Nenhuma ainda. Um clique no botão vai gravar estas propriedades na nota aberta."
+					: `${mudancas.length === 1 ? "1 propriedade alterada" : `${mudancas.length} propriedades alteradas`} a cada clique.`,
+			);
+
+		cabecalho.addButton((b) =>
+			b
+				.setButtonText("Adicionar propriedade")
+				.setCta()
+				.onClick(async () => {
+					criarMudancaPropriedade(botao);
+					await this.aplicar();
+				}),
+		);
+
+		if (mudancas.length === 0) {
+			el.createDiv({
+				cls: "dash-home-config-vazio",
+				text: "Sem propriedade configurada, o botão avisa e não altera nada.",
+			});
+			return;
+		}
+
+		mudancas.forEach((mudanca, indice) => {
+			const caixa = el.createDiv({ cls: "dash-home-config-propriedade" });
+
+			// Linha 1: qual propriedade, e o que fazer com ela.
+			const alvo = new Setting(caixa).setClass("dash-home-config-propriedade-alvo");
+
+			alvo.addButton((b) => {
+				b.setButtonText(mudanca.nome || "Escolher propriedade…");
+				b.setTooltip(mudanca.nome || "Escolher a propriedade da nota");
+				b.onClick(() => {
+					new ModalEscolherPropriedade(this.app, async (nome) => {
+						mudanca.nome = nome;
+						await this.aplicar();
+					}).open();
+				});
+			});
+
+			alvo.addDropdown((drop) => {
+				drop.addOption("definir", "Definir como");
+				drop.addOption("alternar", "Alternar entre");
+				drop.setValue(mudanca.operacao);
+				drop.onChange(async (valor) => {
+					mudanca.operacao = valor as OperacaoPropriedade;
+					// Sair do alternar descarta o segundo valor: mantê-lo escondido faria ele
+					// reaparecer sozinho se ela voltasse a alternar depois.
+					if (mudanca.operacao !== "alternar") delete mudanca.valor2;
+					await this.aplicar();
+				});
+			});
+
+			alvo.addDropdown((drop) => {
+				drop.addOption("texto", "Texto");
+				drop.addOption("numero", "Número");
+				drop.addOption("booleano", "Sim/não");
+				drop.addOption("data", "Data");
+				drop.addOption("vazio", "Limpar");
+				drop.setValue(mudanca.tipo);
+				drop.onChange(async (valor) => {
+					mudanca.tipo = valor as TipoValorPropriedade;
+					await this.aplicar();
+				});
+			});
+
+			alvo.addExtraButton((b) =>
+				b
+					.setIcon("chevron-up")
+					.setTooltip("Subir")
+					.setDisabled(indice === 0)
+					.onClick(async () => {
+						mover(mudancas, indice, -1);
+						await this.aplicar();
+					}),
+			);
+			alvo.addExtraButton((b) =>
+				b
+					.setIcon("chevron-down")
+					.setTooltip("Descer")
+					.setDisabled(indice === mudancas.length - 1)
+					.onClick(async () => {
+						mover(mudancas, indice, 1);
+						await this.aplicar();
+					}),
+			);
+			alvo.addExtraButton((b) =>
+				b
+					.setIcon("trash-2")
+					.setTooltip("Remover esta propriedade")
+					.onClick(async () => {
+						mudancas.splice(indice, 1);
+						if (mudancas.length === 0) delete botao.propriedades;
+						await this.aplicar();
+					}),
+			);
+
+			// "Limpar" apaga a propriedade da nota — não há valor a digitar.
+			if (mudanca.tipo === "vazio") {
+				new Setting(caixa).setDesc(`Remove a propriedade "${mudanca.nome || "…"}" da nota.`);
+				return;
+			}
+
+			// Linha 2: o(s) valor(es). Campos de texto usam `salvarDigitacao`, nunca `aplicar` —
+			// redesenhar o painel a cada tecla tiraria o foco do campo no meio da digitação.
+			const valores = new Setting(caixa)
+				.setClass("dash-home-config-propriedade-valores")
+				.setName(mudanca.operacao === "alternar" ? "Alterna entre" : "Valor");
+
+			valores.addText((texto) =>
+				texto
+					.setPlaceholder(this.exemploDeValor(mudanca.tipo))
+					.setValue(mudanca.valor)
+					.onChange((valor) => {
+						mudanca.valor = valor;
+						this.salvarDigitacao();
+					}),
+			);
+
+			if (mudanca.operacao === "alternar") {
+				valores.addText((texto) =>
+					texto
+						// Deixar em branco é uma escolha com efeito: o segundo lado do ciclo passa a
+						// ser "remover a propriedade", que é como se alterna um marcador (tem/não tem).
+						.setPlaceholder("e (vazio = remover)")
+						.setValue(mudanca.valor2 ?? "")
+						.onChange((valor) => {
+							mudanca.valor2 = valor;
+							this.salvarDigitacao();
+						}),
+				);
+			}
+
+			valores.setDesc(this.explicarMudanca(mudanca));
+		});
+	}
+
+	/** Um exemplo do formato aceito, por tipo — evita a pergunta "como escrevo uma data aqui?". */
+	private exemploDeValor(tipo: TipoValorPropriedade): string {
+		if (tipo === "numero") return "3 ou 3,5";
+		if (tipo === "booleano") return "sim / não";
+		if (tipo === "data") return "hoje, agora ou 2026-08-05";
+		return "concluído";
+	}
+
+	/**
+	 * O que vai acontecer, em português, com os valores que ela acabou de digitar.
+	 *
+	 * Existe porque "alternar" tem uma regra que não se lê no formulário: o botão compara o valor
+	 * ATUAL da nota com o primeiro campo para decidir o lado. Sem esta frase, a única forma de
+	 * descobrir seria clicando e observando a nota.
+	 */
+	private explicarMudanca(mudanca: MudancaPropriedade): string {
+		const nome = mudanca.nome || "a propriedade";
+		const primeiro = mudanca.valor.trim() || "(vazio)";
+
+		if (mudanca.operacao === "alternar") {
+			const segundo = mudanca.valor2?.trim() || "remover a propriedade";
+			return `Se "${nome}" já for ${primeiro}, passa a ${segundo}. Senão, vira ${primeiro}.`;
+		}
+
+		if (mudanca.tipo === "data" && ["hoje", "agora"].includes(mudanca.valor.trim().toLowerCase())) {
+			return `Grava a data do dia do clique em "${nome}".`;
+		}
+
+		return `Grava ${primeiro} em "${nome}", seja qual for o valor atual.`;
 	}
 
 	// ── Coluna direita: a miniatura ──────────────────────────────────────────────────────

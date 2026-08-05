@@ -173,6 +173,104 @@ export class ModalEscolherPasta extends FuzzySuggestModal<TFolder> {
 }
 
 /**
+ * Escolha de uma PROPRIEDADE (campo de frontmatter) já usada no vault.
+ *
+ * A lista sai do que existe nas notas dela, não de uma lista fixa: as propriedades são dela, e
+ * qualquer catálogo que eu escrevesse estaria errado. Escolher em vez de digitar também evita o
+ * erro que não dá aviso nenhum — "Status" e "status" são propriedades DIFERENTES no frontmatter, e
+ * um typo criaria uma segunda propriedade em vez de alterar a que ela quer.
+ *
+ * A contagem de notas ao lado serve de desempate quando duas propriedades têm nomes parecidos: a
+ * usada em 200 notas é a de verdade; a de 1 costuma ser o typo antigo.
+ */
+export class ModalEscolherPropriedade extends FuzzySuggestModal<string> {
+	private contagem = new Map<string, number>();
+
+	constructor(app: App, private onEscolher: (nome: string) => void) {
+		super(app);
+		this.setPlaceholder("Escolha a propriedade — ou digite um nome novo e tecle Enter");
+		this.setInstructions([
+			{ command: "↑↓", purpose: "navegar" },
+			{ command: "↵", purpose: "escolher" },
+			{ command: "esc", purpose: "cancelar" },
+		]);
+	}
+
+	getItems(): string[] {
+		this.contagem = contarPropriedades(this.app);
+		// Mais usadas primeiro: a fuzzy reordena pelo texto digitado, mas com o campo vazio esta é a
+		// ordem que aparece — e "as que eu mais uso" é o começo mais útil.
+		return [...this.contagem.keys()].sort(
+			(a, b) => (this.contagem.get(b) ?? 0) - (this.contagem.get(a) ?? 0) || a.localeCompare(b),
+		);
+	}
+
+	getItemText(nome: string): string {
+		return nome;
+	}
+
+	renderSuggestion(match: FuzzyMatch<string>, el: HTMLElement): void {
+		el.addClass("dash-home-sugestao-caminho");
+		el.createDiv({ text: match.item });
+		const n = this.contagem.get(match.item) ?? 0;
+		el.createDiv({
+			cls: "dash-home-sugestao-secundaria",
+			text: n === 1 ? "1 nota" : `${n} notas`,
+		});
+	}
+
+	/**
+	 * Uma propriedade que ainda não existe em nota nenhuma é um caso legítimo — é o primeiro botão
+	 * que vai criá-la. Sem isto, a única saída seria ir a uma nota, criar a propriedade à mão, e só
+	 * então voltar aqui.
+	 */
+	onNoSuggestion(): void {
+		const digitado = this.inputEl.value.trim();
+		if (!digitado) return;
+		this.resultContainerEl.empty();
+		this.resultContainerEl
+			.createDiv({ cls: "suggestion-item" })
+			.createDiv({ text: `Criar a propriedade "${digitado}"` });
+	}
+
+	selectSuggestion(match: FuzzyMatch<string> | null, evt: MouseEvent | KeyboardEvent): void {
+		// Sem sugestão selecionada, o Enter vale como "usar o que eu digitei".
+		if (!match) {
+			const digitado = this.inputEl.value.trim();
+			this.close();
+			if (digitado) this.onEscolher(digitado);
+			return;
+		}
+		super.selectSuggestion(match, evt);
+	}
+
+	onChooseItem(nome: string): void {
+		this.onEscolher(nome);
+	}
+}
+
+/**
+ * Quantas notas usam cada propriedade.
+ *
+ * Lê o `metadataCache`, que o Obsidian já mantém em memória — varrer o conteúdo dos arquivos para
+ * isto seria ler o vault inteiro do disco a cada abertura do modal.
+ */
+function contarPropriedades(app: App): Map<string, number> {
+	const contagem = new Map<string, number>();
+	for (const arquivo of app.vault.getMarkdownFiles()) {
+		const frontmatter = app.metadataCache.getFileCache(arquivo)?.frontmatter;
+		if (!frontmatter) continue;
+		for (const chave of Object.keys(frontmatter)) {
+			// `position` é metadado do parser (onde o bloco começa e termina), não uma propriedade
+			// da nota — apareceria na lista como se a usuária a tivesse criado.
+			if (chave === "position") continue;
+			contagem.set(chave, (contagem.get(chave) ?? 0) + 1);
+		}
+	}
+	return contagem;
+}
+
+/**
  * Escolha de comando do Obsidian — inclusive os dos outros plugins da usuária (My Tasks, Gallery…).
  * `app.commands` é API interna: se ela mudar, a lista vem vazia em vez de o painel quebrar.
  */
