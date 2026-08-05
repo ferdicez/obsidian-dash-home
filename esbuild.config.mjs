@@ -6,17 +6,22 @@ import { fileURLToPath } from "url";
 import builtins from "builtin-modules";
 
 const banner = `/*
-Dash Home - plugin Obsidian
+Dash Cards - plugin Obsidian
 Gerado por esbuild, não editar main.js diretamente.
 */`;
 
 const prod = process.argv[2] === "production";
 
-// Esta pasta (plugins/dash-home) é o código-fonte de desenvolvimento. O Obsidian carrega o plugin
-// de dentro de .obsidian/plugins/dash-home (pasta real do vault) — são pastas separadas, não a
-// mesma. Sem essa cópia, o build fica "pronto" mas o Obsidian continua rodando a versão antiga.
+// Esta pasta é o código-fonte de desenvolvimento. O Obsidian carrega o plugin de dentro de
+// .obsidian/plugins/<id> (pasta real do vault) — são pastas separadas, não a mesma. Sem essa
+// cópia, o build fica "pronto" mas o Obsidian continua rodando a versão antiga.
+//
+// O id vem do manifest, e não escrito à mão aqui: quando o plugin foi renomeado de dash-home para
+// dash-cards, uma string fixa neste arquivo teria copiado o build para a pasta ERRADA — com o
+// build passando, o que faz a falha parecer bug do plugin.
 const raiz = path.dirname(fileURLToPath(import.meta.url));
-const pastaVaultPlugin = path.join(raiz, "..", "..", ".obsidian", "plugins", "dash-home");
+const idPlugin = JSON.parse(fs.readFileSync(path.join(raiz, "manifest.json"), "utf8")).id;
+const pastaVaultPlugin = path.join(raiz, "..", "..", ".obsidian", "plugins", idPlugin);
 
 function copiarParaVault() {
 	if (!fs.existsSync(pastaVaultPlugin)) fs.mkdirSync(pastaVaultPlugin, { recursive: true });

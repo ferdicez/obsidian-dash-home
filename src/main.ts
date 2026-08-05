@@ -1,15 +1,15 @@
 import { MarkdownRenderChild, Notice, Plugin, TFile } from "obsidian";
 import { carregarDados, dashboardAtivo, salvarDados, type Dashboard, type DadosDashHome } from "./dados";
-import { escreverDashboard } from "./nota";
-import { PainelConfigDashHome } from "./painel-config";
+import { escreverDashboard, LINGUAGEM, LINGUAGEM_ANTIGA } from "./nota";
+import { PainelConfigDashCards } from "./painel-config";
 import { renderizarDashboard } from "./render";
 
 /**
- * Dash Home — dashboard inicial de navegação.
+ * Dash Cards — dashboard inicial de navegação.
  *
- * A usuária monta o layout inteiro em Configurações → Dash Home (quadrantes, botões, ícones,
+ * A usuária monta o layout inteiro em Configurações → Dash Cards (quadrantes, botões, ícones,
  * cores), vendo uma miniatura ao vivo, e aponta por seletor qual nota é o dashboard. O plugin
- * escreve o resultado nessa nota como um bloco ```dash-home, e é esse bloco que este arquivo
+ * escreve o resultado nessa nota como um bloco ```dash-cards, e é esse bloco que este arquivo
  * registra para renderizar. Em nenhum momento ela digita YAML ou caminho de arquivo.
  *
  * Por que passar por uma nota em vez de uma view própria: o dashboard vira um arquivo .md de
@@ -17,32 +17,37 @@ import { renderizarDashboard } from "./render";
  * inicialização" nativo do Obsidian, aceita texto e embeds em volta, e não desaparece se o plugin
  * for desinstalado. A usuária nunca edita esse arquivo à mão; ele é gerado.
  */
-export default class DashHomePlugin extends Plugin {
+export default class DashCardsPlugin extends Plugin {
 	dados!: DadosDashHome;
 
 	async onload() {
 		this.dados = await carregarDados(this);
 
-		// O bloco carrega o id do dashboard, então achamos qual renderizar mesmo com dois embedados
-		// na mesma nota. Sem id (ou id órfão), cai no dashboard ativo — que é o caso comum.
-		this.registerMarkdownCodeBlockProcessor("dash-home", (fonte, el, ctx) => {
-			const id = /^\s*id:\s*(\S+)\s*$/m.exec(fonte)?.[1];
-			const dashboard = this.dados.dashboards.find((d) => d.id === id) ?? dashboardAtivo(this.dados);
+		// As DUAS linguagens são registradas: `dash-cards` é a atual, `dash-home` é a das notas
+		// escritas antes da renomeação. Sem a antiga, todo dashboard já existente no vault dela
+		// viraria um bloco de código cru até ser regravado.
+		for (const linguagem of [LINGUAGEM, LINGUAGEM_ANTIGA]) {
+			this.registerMarkdownCodeBlockProcessor(linguagem, (fonte, el, ctx) => {
+				// O bloco carrega o id do dashboard, então achamos qual renderizar mesmo com dois
+				// embedados na mesma nota. Sem id (ou id órfão), cai no dashboard ativo.
+				const id = /^\s*id:\s*(\S+)\s*$/m.exec(fonte)?.[1];
+				const dashboard = this.dados.dashboards.find((d) => d.id === id) ?? dashboardAtivo(this.dados);
 
-			// Um MarkdownRenderChild por bloco, entregue ao contexto via addChild: o Obsidian o
-			// destrói quando o bloco sai da tela, levando junto os embeds e Bases que o markdown
-			// de um quadrante de conteúdo livre tiver criado. Sem este dono, esses sub-componentes
-			// continuariam vivos e consultando depois da nota fechada.
-			const componente = new MarkdownRenderChild(el);
-			ctx.addChild(componente);
+				// Um MarkdownRenderChild por bloco, entregue ao contexto via addChild: o Obsidian o
+				// destrói quando o bloco sai da tela, levando junto os embeds e Bases que o markdown
+				// de um quadrante de conteúdo livre tiver criado. Sem este dono, esses
+				// sub-componentes continuariam vivos e consultando depois da nota fechada.
+				const componente = new MarkdownRenderChild(el);
+				ctx.addChild(componente);
 
-			renderizarDashboard(el, dashboard, this.dados, {
-				app: this.app,
-				componente,
-				// A nota que hospeda o bloco — sem ela, links relativos do markdown não resolvem.
-				caminhoOrigem: ctx.sourcePath,
+				renderizarDashboard(el, dashboard, this.dados, {
+					app: this.app,
+					componente,
+					// A nota que hospeda o bloco — sem ela, links relativos do markdown não resolvem.
+					caminhoOrigem: ctx.sourcePath,
+				});
 			});
-		});
+		}
 
 		this.addCommand({
 			id: "abrir-dashboard",
@@ -60,7 +65,7 @@ export default class DashHomePlugin extends Plugin {
 			void this.abrirDashboard(dashboardAtivo(this.dados));
 		});
 
-		this.addSettingTab(new PainelConfigDashHome(this.app, this));
+		this.addSettingTab(new PainelConfigDashCards(this.app, this));
 	}
 
 	/** Persiste e regrava as notas do dashboard ativo — o fluxo normal de qualquer edição no painel. */

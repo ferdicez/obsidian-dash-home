@@ -18,7 +18,7 @@ export async function executarAcao(app: App, botao: Botao, novaAba: boolean): Pr
 
 	const destino = botao.destino?.trim();
 	if (!destino) {
-		new Notice(`O botão "${botao.texto}" ainda não tem destino. Configurações → Dash Home.`);
+		new Notice(`O botão "${botao.texto}" ainda não tem destino. Configurações → Dash Cards.`);
 		return;
 	}
 
@@ -47,7 +47,7 @@ export async function executarAcao(app: App, botao: Botao, novaAba: boolean): Pr
 async function alterarPropriedades(app: App, botao: Botao): Promise<void> {
 	const mudancas = (botao.propriedades ?? []).filter((m) => m.nome?.trim());
 	if (mudancas.length === 0) {
-		new Notice(`O botão "${botao.texto}" ainda não tem propriedade configurada. Configurações → Dash Home.`);
+		new Notice(`O botão "${botao.texto}" ainda não tem propriedade configurada. Configurações → Dash Cards.`);
 		return;
 	}
 
@@ -75,7 +75,7 @@ async function alterarPropriedades(app: App, botao: Botao): Promise<void> {
 
 		const opcoes = mudanca.opcoes ?? [];
 		if (opcoes.length === 0) {
-			new Notice(`"${mudanca.nome}" não tem opções configuradas. Configurações → Dash Home.`);
+			new Notice(`"${mudanca.nome}" não tem opções configuradas. Configurações → Dash Cards.`);
 			return;
 		}
 

@@ -8,7 +8,7 @@ import type { EstiloBotao } from "./estilo-botao";
  *
  * ── O contrato com a nota ────────────────────────────────────────────────────────────────
  *
- * O plugin é dono do bloco ```dash-home, e só dele. Todo o resto da nota é da usuária: se ela escrever
+ * O plugin é dono do bloco ```dash-cards, e só dele. Todo o resto da nota é da usuária: se ela escrever
  * um título, um parágrafo ou um embed em volta, isso sobrevive a cada salvamento. Por isso
  * `escreverDashboard` faz substituição cirúrgica do bloco em vez de reescrever o arquivo inteiro.
  *
@@ -16,7 +16,18 @@ import type { EstiloBotao } from "./estilo-botao";
  * usuária mova o bloco pelo arquivo — e para não confundir dois dashboards embedados na mesma nota.
  */
 
-const ABRE = "```dash-home";
+/**
+ * A linguagem do bloco. `dash-cards` é a atual; `dash-home` é como o plugin se chamava até a 0.6.0.
+ *
+ * As duas continuam sendo LIDAS (e o `main.ts` registra as duas), porque as notas já escritas no
+ * vault dela usam a antiga: trocar só o nome faria todo dashboard existente parar de renderizar
+ * até ser regravado. O bloco NOVO é sempre escrito com a linguagem atual, então cada nota migra
+ * sozinha no primeiro salvamento.
+ */
+export const LINGUAGEM = "dash-cards";
+export const LINGUAGEM_ANTIGA = "dash-home";
+
+const ABRE = "```" + LINGUAGEM;
 const FECHA = "```";
 
 /** O YAML do bloco. Legível de propósito: se a usuária abrir a nota, tem que dar pra entender. */
@@ -27,7 +38,7 @@ export function gerarBloco(
 ): string {
 	const linhas: string[] = [];
 	linhas.push(ABRE);
-	linhas.push(`# Gerado pelo plugin Dash Home — edite em Configurações → Dash Home`);
+	linhas.push(`# Gerado pelo plugin Dash Cards — edite em Configurações → Dash Cards`);
 	linhas.push(`id: ${dashboard.id}`);
 	linhas.push(`colunas: ${dashboard.colunas}`);
 	// A largura do dashboard faltava aqui: o bloco descrevia o layout sem dizer quanto ele ocupa.
@@ -223,7 +234,7 @@ async function escreverEmUmaNota(
 	try {
 		const existente = acharArquivo(app, caminho);
 		if (existente instanceof TFolder) {
-			avisarFalha(`"${caminho}" é uma pasta — escolha outro nome de nota em Configurações → Dash Home.`);
+			avisarFalha(`"${caminho}" é uma pasta — escolha outro nome de nota em Configurações → Dash Cards.`);
 			return null;
 		}
 
@@ -306,9 +317,11 @@ function acharBloco(conteudo: string, id: string): { inicio: number; fim: number
 
 		if (cercaAberta === null) {
 			if (!cerca) continue;
-			// Abre um bloco. Só nos interessa se for exatamente ```dash-home no nível de topo.
+			// Abre um bloco. Só nos interessa se for um bloco nosso no nível de topo — na linguagem
+			// atual OU na antiga, senão a substituição não acharia o bloco das notas já escritas e
+			// acrescentaria um segundo dashboard no fim do arquivo.
 			cercaAberta = cerca[1];
-			if (cerca[2] === "dash-home" && cerca[1] === "```") {
+			if ((cerca[2] === LINGUAGEM || cerca[2] === LINGUAGEM_ANTIGA) && cerca[1] === "```") {
 				inicioNosso = inicioLinha;
 				idDoBloco = null;
 			}

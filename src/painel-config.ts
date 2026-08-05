@@ -40,7 +40,7 @@ import {
 	type PinturaBotao,
 } from "./estilo-botao";
 import { paletasDoCustomize, type PaletaExterna } from "./paleta";
-import type DashHomePlugin from "./main";
+import type DashCardsPlugin from "./main";
 import { renderizarDashboard } from "./render";
 import {
 	ModalEscolherBase,
@@ -68,11 +68,11 @@ import {
  * data.json guarda outro. Num painel de configurações, que abre por segundos e não por horas, essa
  * troca vale a pena.
  */
-export class PainelConfigDashHome extends PluginSettingTab {
+export class PainelConfigDashCards extends PluginSettingTab {
 	// O estado de aberto/fechado dos acordeões vive no módulo `acordeao.ts`, não aqui — ver o
 	// comentário de `abertos` lá.
 
-	constructor(app: App, private plugin: DashHomePlugin) {
+	constructor(app: App, private plugin: DashCardsPlugin) {
 		super(app, plugin);
 	}
 
@@ -239,19 +239,51 @@ export class PainelConfigDashHome extends PluginSettingTab {
 					}),
 			);
 
-		new Setting(el)
-			.setName("Nome")
-			.setDesc("Só o nome do dashboard nas configurações — não muda a nota.")
-			.addText((texto) =>
-				texto.setValue(dashboard.nome).onChange((valor) => {
-					dashboard.nome = valor;
-					// Sem redesenhar: o campo tem foco e um redesenho a cada tecla o perderia.
-					this.salvarDigitacao();
-				}),
-			);
+		// ── Dois acordeões, na ordem que a usuária pediu (sessão 19) ─────────────────────────
+		//
+		// 1. "Nome e notas": a identidade da predefinição — o que ela é e onde é escrita.
+		// 2. "Grade e largura": a forma do dashboard.
+		//
+		// Ambos nascem ABERTOS: são o começo da montagem, e chegar num painel todo fechado
+		// esconderia justamente o que se configura primeiro.
+		const secaoIdentidade = criarAcordeao(el, {
+			chave: `${dashboard.id}:identidade-dashboard`,
+			titulo: "Nome e notas",
+			descricao: "Como esta predefinição se chama e em quais notas ela é escrita.",
+			abertoPorPadrao: true,
+		});
 
-		this.desenharNotas(el, dashboard);
+		secaoIdentidade.sePreenchido((corpo) => {
+			new Setting(corpo)
+				.setName("Nome")
+				.setDesc("Só o nome do dashboard nas configurações — não muda a nota.")
+				.addText((texto) =>
+					texto.setValue(dashboard.nome).onChange((valor) => {
+						dashboard.nome = valor;
+						// Sem redesenhar: o campo tem foco e um redesenho a cada tecla o perderia.
+						this.salvarDigitacao();
+					}),
+				);
 
+			this.desenharNotas(corpo, dashboard);
+		});
+
+		const secaoGrade = criarAcordeao(el, {
+			chave: `${dashboard.id}:grade`,
+			titulo: "Grade e largura",
+			descricao: "A forma do dashboard: em quantas colunas divide e quanto ocupa na nota.",
+			abertoPorPadrao: true,
+		});
+
+		// A linha divisória embaixo deste grupo, pedida pela usuária: ele fecha o bloco do
+		// dashboard em si, e o que vem depois (Quadrantes, Aparência) é outro assunto.
+		secaoGrade.secao.addClass("dash-home-acordeao-fim-de-grupo");
+
+		secaoGrade.sePreenchido((corpo) => this.desenharGrade(corpo, dashboard));
+	}
+
+	/** Grade e largura — o segundo acordeão do topo. */
+	private desenharGrade(el: HTMLElement, dashboard: Dashboard): void {
 		new Setting(el)
 			.setName("Grade")
 			.setDesc(
@@ -550,8 +582,55 @@ export class PainelConfigDashHome extends PluginSettingTab {
 		});
 
 		secao.sePreenchido((corpo) => {
-			// Dentro do quadrante, três acordeões aninhados: conteúdo (o que ela mexe mais),
-			// identidade e aparência. Sem isso um quadrante aberto vira uma parede de ~12 controles.
+			// Dentro do quadrante, quatro acordeões aninhados. Sem eles um quadrante aberto vira uma
+			// parede de ~12 controles.
+			//
+			// A ORDEM é a que a usuária pediu (sessão 19): título/ícone/largura → cor e aparência →
+			// conteúdo → aparência dos botões. Ou seja, do que o quadrante É para o que ele MOSTRA —
+			// e a aparência dos botões vem logo depois dos botões que ela estiliza.
+
+			const secaoIdentidade = criarAcordeao(corpo, {
+				chave: `${quadrante.id}:identidade`,
+				titulo: "Título, ícone e largura",
+				aninhado: true,
+			});
+
+			secaoIdentidade.sePreenchido((corpoIdentidade) => {
+				new Setting(corpoIdentidade).setName("Título").addText((texto) =>
+					texto.setValue(quadrante.titulo).onChange((valor) => {
+						quadrante.titulo = valor;
+						this.salvarDigitacao();
+					}),
+				);
+
+				new Setting(corpoIdentidade)
+					.setName("Ícone")
+					.setDesc(quadrante.icone ? semPrefixo(quadrante.icone) : "Nenhum")
+					.addButton((botao) => {
+						if (quadrante.icone) botao.setIcon(quadrante.icone);
+						else botao.setButtonText("Escolher");
+						botao.setTooltip("Escolher ícone");
+						botao.onClick(() => {
+							new ModalEscolherIcone(this.app, quadrante.titulo, quadrante.icone, async (icone) => {
+								quadrante.icone = icone;
+								await this.aplicar();
+							}).open();
+						});
+					});
+
+				this.desenharLargura(corpoIdentidade, dashboard, quadrante);
+			});
+
+			const secaoAparencia = criarAcordeao(corpo, {
+				chave: `${quadrante.id}:aparencia`,
+				titulo: "Cor e aparência",
+				aninhado: true,
+			});
+
+			secaoAparencia.sePreenchido((corpoAparencia) => {
+				this.desenharSeletorDeCor(corpoAparencia, quadrante);
+				this.desenharEstilo(corpoAparencia, quadrante);
+			});
 
 			const secaoConteudo = criarAcordeao(corpo, {
 				chave: `${quadrante.id}:conteudo`,
@@ -630,49 +709,6 @@ export class PainelConfigDashHome extends PluginSettingTab {
 							}),
 					);
 				}
-			});
-
-			const secaoIdentidade = criarAcordeao(corpo, {
-				chave: `${quadrante.id}:identidade`,
-				titulo: "Título, ícone e largura",
-				aninhado: true,
-			});
-
-			secaoIdentidade.sePreenchido((corpoIdentidade) => {
-				new Setting(corpoIdentidade).setName("Título").addText((texto) =>
-					texto.setValue(quadrante.titulo).onChange((valor) => {
-						quadrante.titulo = valor;
-						this.salvarDigitacao();
-					}),
-				);
-
-				new Setting(corpoIdentidade)
-					.setName("Ícone")
-					.setDesc(quadrante.icone ? semPrefixo(quadrante.icone) : "Nenhum")
-					.addButton((botao) => {
-						if (quadrante.icone) botao.setIcon(quadrante.icone);
-						else botao.setButtonText("Escolher");
-						botao.setTooltip("Escolher ícone");
-						botao.onClick(() => {
-							new ModalEscolherIcone(this.app, quadrante.titulo, quadrante.icone, async (icone) => {
-								quadrante.icone = icone;
-								await this.aplicar();
-							}).open();
-						});
-					});
-
-				this.desenharLargura(corpoIdentidade, dashboard, quadrante);
-			});
-
-			const secaoAparencia = criarAcordeao(corpo, {
-				chave: `${quadrante.id}:aparencia`,
-				titulo: "Cor e aparência",
-				aninhado: true,
-			});
-
-			secaoAparencia.sePreenchido((corpoAparencia) => {
-				this.desenharSeletorDeCor(corpoAparencia, quadrante);
-				this.desenharEstilo(corpoAparencia, quadrante);
 			});
 
 			// A aparência dos botões deste quadrante. Em acordeão próprio, e não dentro de "Cor e

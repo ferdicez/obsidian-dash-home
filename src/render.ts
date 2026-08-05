@@ -55,7 +55,7 @@ export function renderizarDashboard(
 		vazio.setText(
 			opcoes.miniatura
 				? "Adicione um quadrante para ver o preview"
-				: "Este dashboard ainda não tem quadrantes. Configurações → Dash Home.",
+				: "Este dashboard ainda não tem quadrantes. Configurações → Dash Cards.",
 		);
 		return;
 	}
@@ -237,7 +237,7 @@ function renderizarMarkdown(
 		}
 		corpo.createDiv({
 			cls: "dash-home-botao-vazio",
-			text: opcoes.miniatura ? "conteúdo livre" : "Quadrante vazio — escreva algo em Configurações → Dash Home.",
+			text: opcoes.miniatura ? "conteúdo livre" : "Quadrante vazio — escreva algo em Configurações → Dash Cards.",
 		});
 		return;
 	}

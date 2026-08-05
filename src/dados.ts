@@ -1,4 +1,4 @@
-import type { Plugin } from "obsidian";
+import { Notice, type Plugin } from "obsidian";
 import type { EstiloQuadrante } from "./estilo";
 import { normalizarEstiloBotao, type EstiloBotao } from "./estilo-botao";
 
@@ -349,8 +349,54 @@ function migrarCaminhos(dash: Dashboard & { caminhoNota?: unknown }): string[] {
 	return [];
 }
 
+/**
+ * O id anterior do plugin, quando ele se chamava "Dash Home".
+ *
+ * O id define a PASTA em `.obsidian/plugins/`, e é de lá que o `loadData()` lê. Ao renomear para
+ * `dash-cards`, o Obsidian passou a ver um plugin novo, com pasta nova e sem `data.json` — ou seja,
+ * todos os dashboards dela ficariam para trás na pasta antiga, em silêncio.
+ */
+const ID_ANTIGO = "dash-home";
+
+/**
+ * Lê o `data.json` da instalação antiga, se houver.
+ *
+ * Passa pelo `vault.adapter` porque `loadData()` só enxerga a pasta do id ATUAL. Devolve `null`
+ * em qualquer falha (pasta inexistente, JSON quebrado, permissão): não achar a configuração antiga
+ * é o caso normal de quem instala o plugin agora, e não pode impedir a carga.
+ */
+async function dadosDaInstalacaoAntiga(plugin: Plugin): Promise<unknown | null> {
+	try {
+		const caminho = `${plugin.app.vault.configDir}/plugins/${ID_ANTIGO}/data.json`;
+		if (!(await plugin.app.vault.adapter.exists(caminho))) return null;
+		const bruto = await plugin.app.vault.adapter.read(caminho);
+		const lido = JSON.parse(bruto);
+		return lido && typeof lido === "object" ? lido : null;
+	} catch {
+		return null;
+	}
+}
+
 export async function carregarDados(plugin: Plugin): Promise<DadosDashHome> {
-	const data = await plugin.loadData();
+	let data = await plugin.loadData();
+
+	// Migração de "Dash Home" para "Dash Cards": sem `data.json` próprio, herda o da pasta antiga.
+	//
+	// A condição é `data` AUSENTE, e não "data vazio": depois da primeira gravação o plugin novo
+	// tem o seu próprio arquivo, e reler o antigo desfaria tudo que ela fez desde então. A pasta
+	// antiga NÃO é apagada — se ela voltar para uma versão anterior do plugin, a configuração ainda
+	// está lá (mesma regra da migração de `caminhoNota`, sessão 14).
+	if (!data) {
+		const antigo = await dadosDaInstalacaoAntiga(plugin);
+		if (antigo) {
+			data = antigo;
+			// Grava já na pasta nova: sem isto, a herança se repetiria a cada carga e uma exclusão
+			// de dashboard voltaria sozinha na próxima abertura do Obsidian.
+			await plugin.saveData(antigo);
+			new Notice("Dash Cards: configuração do Dash Home importada.");
+		}
+	}
+
 	// Object.assign raso (padrão dos outros plugins do vault): um campo novo adicionado ao
 	// DADOS_PADRAO nasce preenchido mesmo em data.json antigos.
 	const dados = Object.assign({}, DADOS_PADRAO, data) as DadosDashHome;

@@ -609,6 +609,16 @@
 	text-align: left;
 }
 
+/* Fim de grupo: separa o bloco do dashboard (nome/notas, grade/largura) do que vem depois
+   (quadrantes, aparência). Todo acordeão já tem uma linha de 1px embaixo — esta precisa ser
+   mais forte, senão não se distingue da divisão entre irmãos e não separa nada. Margem em cima
+   e embaixo, porque espaço é o que faz a linha ler como "aqui termina um assunto". */
+.dash-home-acordeao-fim-de-grupo {
+	margin-bottom: 18px;
+	padding-bottom: 6px;
+	border-bottom: 2px solid var(--background-modifier-border);
+}
+
 /* O cabeçalho é <button> (foco por teclado), então precisa perder toda a aparência de botão.
    O !important é necessário: o app estiliza `button` dentro da aba de Configurações com regras
    mais específicas que estas — sem forçar, o texto sai centralizado e o bloco ganha margem
