@@ -476,31 +476,45 @@
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
+/* O !important existe pela mesma razão do cabeçalho do acordeão: o app estiliza `button` dentro da
+   janela de Configurações com regras mais específicas que estas. Sem forçar, a aba ATIVA ganhava um
+   fundo claro e virava um botão em relevo — que é o oposto da aba sublinhada da especificação, e o
+   que ela apontou num print ("o sub-menu selecionado fica branco atras"). */
 .dash-home-config-aba {
 	display: flex;
 	align-items: center;
 	gap: 0.45em;
-	padding: 0.55em 0.9em;
-	background: transparent;
-	border: none;
-	border-radius: 0;
-	box-shadow: none;
+	padding: 0.55em 0.9em !important;
+	background: transparent !important;
+	border: none !important;
+	border-radius: 0 !important;
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
 	cursor: pointer;
+	height: auto !important;
 	/* A linha da aba ativa é desenhada aqui (e não com border-bottom) para não somar 1px à altura
 	   e fazer as abas dançarem ao trocar. */
-	box-shadow: inset 0 -2px 0 transparent;
+	box-shadow: inset 0 -2px 0 transparent !important;
 }
 
 .dash-home-config-aba:hover {
-	background: var(--background-modifier-hover);
+	background: var(--background-modifier-hover) !important;
 	color: var(--text-normal);
 }
 
 .dash-home-config-aba.is-ativa {
+	background: transparent !important;
 	color: var(--text-normal);
-	box-shadow: inset 0 -2px 0 var(--interactive-accent);
+	box-shadow: inset 0 -2px 0 var(--interactive-accent) !important;
+}
+
+/* O foco por teclado também não pode virar caixa: a aba já mostra onde está pelo sublinhado. O
+   `:hover` fica de fora para o realce de mouse continuar aparecendo numa aba que também tem foco. */
+.dash-home-config-aba:focus:not(:hover),
+.dash-home-config-aba:focus-visible:not(:hover) {
+	background: transparent !important;
+	box-shadow: inset 0 -2px 0 var(--interactive-accent) !important;
+	outline: none;
 }
 
 .dash-home-config-aba-icone {
